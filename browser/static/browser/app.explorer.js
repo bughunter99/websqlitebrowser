@@ -73,6 +73,12 @@ async function loadTree(path = '') {
         const displayPath = data.current_abs_path || `repository${data.current_path ? `/${data.current_path}` : ''}`;
         domElements.currentPath.textContent = displayPath;
         outputLog(`DIR ${domElements.currentPath.textContent}`);
+        
+        // 권한 거부 경고 처리
+        if (data.warning) {
+            outputLog(`DIR WARNING ${data.warning}`, 'warn');
+        }
+
         const parentButton = /** @type {HTMLButtonElement | null} */ (document.getElementById('go-parent'));
         if (parentButton) {
             parentButton.dataset.parentPath = data.parent_path;
@@ -90,9 +96,20 @@ async function loadTree(path = '') {
 
         renderExplorer(data);
     } catch (error) {
-        domElements.explorerList.innerHTML = `<div class="status-box error">${escapeHtml(error.message)}</div>`;
+        // @ts-ignore - error handling
+        const errorMsg = error?.message || String(error);
+        // @ts-ignore - error handling
+        const statusCode = error?.statusCode;
+        
+        // 권한 거부 에러 처리
+        if (statusCode === 403) {
+            outputLog(`DIR ACCESS DENIED: ${errorMsg}. Please check permissions or try parent directory.`, 'error');
+        } else {
+            outputLog(`DIR ERROR ${errorMsg}`, 'error');
+        }
+        
+        domElements.explorerList.innerHTML = `<div class="status-box error">${escapeHtml(errorMsg)}</div>`;
         domElements.explorerStatusbar.textContent = 'folders 0 | files 0 | size 0 B | disk 0%';
-        outputLog(`DIR ERROR ${error.message}`, 'error');
     }
 }
 

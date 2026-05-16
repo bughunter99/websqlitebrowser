@@ -69,11 +69,33 @@ async function runQuery() {
         setQueryPending(true);
 
         try {
-            const data = /** @type {QueryResponse} */ (await requestJson('/api/query/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: databasePath, sql }),
-            }));
+            // 캐시에서 결과 확인 (SELECT 문인 경우만)
+            let data;
+            let wasCached = false;
+            const isCacheable = /^SELECT\s+/i.test(sql.trim());
+            if (isCacheable) {
+                const cachedResult = queryResultCache.get(sql, databasePath);
+                if (cachedResult) {
+                    data = cachedResult;
+                    wasCached = true;
+                    outputLog(`QUERY CACHE HIT request=${requestId}`, 'info');
+                } else {
+                    data = /** @type {QueryResponse} */ (await requestJson('/api/query/', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: databasePath, sql }),
+                    }));
+                    // 캐시에 저장
+                    queryResultCache.set(sql, databasePath, data);
+                }
+            } else {
+                // 쓰기 쿼리는 캐시하지 않음
+                data = /** @type {QueryResponse} */ (await requestJson('/api/query/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: databasePath, sql }),
+                }));
+            }
             if (isStaleQueryResponse()) {
                 outputLog(`QUERY STALE IGNORED request=${requestId} elapsed=${Date.now() - startedAt.getTime()}ms`, 'warn');
                 return;
@@ -93,6 +115,8 @@ async function runQuery() {
                 outputLog(`QUERY END request=${requestId} at=${finishedAtText} elapsed=${elapsedMs}ms results=${data.results.length} rows=${totalRows}`);
                 data.results.forEach((item, index) => {
                     outputLog(`RESULT request=${requestId} ${index + 1} rows=${Number(item.row_count || item.rows?.length || 0)}${item.truncated ? ' truncated=true' : ''}`);
+                    // 각 쿼리별 메트릭 기록
+                    performanceMetrics.recordQuery(sql, elapsedMs, Number(item.row_count || item.rows?.length || 0), wasCached, true);
                 });
             } else {
                 target.className = '';
@@ -102,6 +126,8 @@ async function runQuery() {
                 const truncatedText = data.truncated ? ' | Truncated' : '';
                 setStatus(`Rows: ${fetchedRows}${truncatedText}`, `${elapsedMs} ms`);
                 outputLog(`QUERY END request=${requestId} at=${finishedAtText} elapsed=${elapsedMs}ms rows=${fetchedRows}${data.truncated ? ' truncated=true' : ''}`);
+                // 쿼리 메트릭 기록
+                performanceMetrics.recordQuery(sql, elapsedMs, fetchedRows, wasCached, true);
             }
         } catch (error) {
             if (isStaleQueryResponse()) {
@@ -113,9 +139,14 @@ async function runQuery() {
             const errorMsg = error?.message || String(error);
             target.textContent = errorMsg;
             setStatus('Query failed', errorMsg);
-            outputLog(`QUERY ERROR request=${requestId} ${errorMsg}`, 'error');
+            
+            // 에러 시 해당 쿼리의 캐시 제거
+            queryResultCache.cache.delete(queryResultCache.generateKey(sql, databasePath));
+            outputLog(`QUERY ERROR request=${requestId} ${errorMsg} cache_removed=true`, 'error');
         } finally {
             setQueryPending(false);
+            // 쓰기 쿼리인 경우 DB의 모든 캐시 초기화
+            queryResultCache.clearIfWriteQuery(sql, databasePath);
         }
     } catch (outerError) {
         setQueryPending(false);

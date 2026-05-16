@@ -25,7 +25,19 @@ async function loadTable(tableName, tabId = state.tableTabIds.get(tableName)) {
     setTableLoadingState(target);
 
     try {
-        const data = /** @type {any} */ (await requestJson(`/api/table/?path=${encodeURIComponent(databasePath)}&table=${encodeURIComponent(tableName)}&all=1`));
+        // 캐시 확인 (SELECT * FROM table)
+        const query = `SELECT * FROM ${tableName}`;
+        let data;
+        const cachedResult = queryResultCache.get(query, databasePath);
+        if (cachedResult) {
+            data = cachedResult;
+            outputLog(`TABLE CACHE HIT ${tableName} request=${requestId}`, 'info');
+        } else {
+            data = /** @type {any} */ (await requestJson(`/api/table/?path=${encodeURIComponent(databasePath)}&table=${encodeURIComponent(tableName)}&all=1`));
+            // 캐시에 저장
+            queryResultCache.set(query, databasePath, data);
+        }
+        
         const isStale = state.tableLoadRequestIds.get(tableName) !== requestId
             || !state.currentDatabase
             || state.currentDatabase.path !== databasePath;
@@ -44,7 +56,9 @@ async function loadTable(tableName, tabId = state.tableTabIds.get(tableName)) {
             outputLog(`TABLE STALE ERROR IGNORED ${tableName} request=${requestId} elapsed=${Date.now() - startedAt}ms`, 'warn');
             return;
         }
-        renderTableErrorState(target, error.message);
-        outputLog(`TABLE ERROR ${tableName} request=${requestId} elapsed=${Date.now() - startedAt}ms ${error.message}`, 'error');
+        // @ts-ignore - error.message is safe to access
+        renderTableErrorState(target, error?.message || String(error));
+        // @ts-ignore - error.message is safe to access
+        outputLog(`TABLE ERROR ${tableName} request=${requestId} elapsed=${Date.now() - startedAt}ms ${error?.message || String(error)}`, 'error');
     }
 }

@@ -12,9 +12,16 @@
                 || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches && window.innerWidth < 900);
             document.documentElement.dataset.device = isMobile ? 'mobile' : 'desktop';
             document.documentElement.style.setProperty('--ui-scale', isMobile ? '1' : '1.2');
+            
+            // Windows 감지
+            const isWindows = /Windows|Win32|Win64|WinCE/i.test(userAgent);
+            if (isWindows) {
+                document.documentElement.dataset.os = 'windows';
+            }
+            document.documentElement.style.setProperty('--explorer-scale', (!isMobile && isWindows) ? '1.5' : '1');
         }());
     </script>
-    <link rel="stylesheet" href="{% static 'browser/app.css' %}?v=20260516-26">
+    <link rel="stylesheet" href="{% static 'browser/app.css' %}?v=20260516-29">
 </head>
 <body>
     <div class="app-shell">
@@ -115,8 +122,7 @@
         </main>
     </div>
 
-    <script src="{% static 'browser/app.state.js' %}?v=20260516-1"></script>
-    <script src="{% static 'browser/app.dom.js' %}?v=20260516-1"></script>
+    <script src="{% static 'browser/app.state.js' %}?v=20260516-1"></script>    <script src="{% static 'browser/app.cache.js' %}?v=20260516-1"></script>    <script src="{% static 'browser/app.pagination.js' %}?v=20260516-1"></script>    <script src="{% static 'browser/app.metrics.js' %}?v=20260516-1"></script>    <script src="{% static 'browser/app.dom.js' %}?v=20260516-1"></script>
     <script src="{% static 'browser/app.utils.js' %}?v=20260516-1"></script>
     <script src="{% static 'browser/app.api.js' %}?v=20260516-1"></script>
     <script src="{% static 'browser/app.sql.js' %}?v=20260516-1"></script>

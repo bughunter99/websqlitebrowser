@@ -9,6 +9,11 @@ async function openDatabase(path) {
         state.currentDatabase = data.database;
         state.loadedTables.clear();
         state.tableLoadRequestIds.clear();
+        
+        // 이전 DB의 캐시 제거
+        if (path) {
+            queryResultCache.clearByDatabase(path);
+        }
 
         domElements.workspaceFile.textContent = data.database.name;
         setStatus(`Opened: ${data.database.name}`, `Tables: ${data.database.tables.length}`);

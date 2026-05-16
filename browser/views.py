@@ -51,18 +51,32 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 			raise SuspiciousOperation('Directory does not exist.')
 
 		entries = []
-		for child in sorted(current_path.iterdir(), key=lambda item: (item.is_file(), item.name.lower())):
-			stat = child.stat()
-			size_bytes = stat.st_size if child.is_file() else 0
-			entries.append(
+		try:
+			for child in sorted(current_path.iterdir(), key=lambda item: (item.is_file(), item.name.lower())):
+				stat = child.stat()
+				size_bytes = stat.st_size if child.is_file() else 0
+				entries.append(
+					{
+						'name': child.name,
+						'path': relative_to_root(child),
+						'type': 'directory' if child.is_dir() else 'file',
+						'is_sqlite': is_sqlite_file(child),
+						'size_bytes': size_bytes,
+						'size_human': format_size(size_bytes) if child.is_file() else '',
+						'modified_at': format_modified(stat.st_mtime),
+					}
+				)
+		except PermissionError as e:
+			# 권한 거부: 부분 결과와 에러 메시지 함께 반환
+			return JsonResponse(
 				{
-					'name': child.name,
-					'path': relative_to_root(child),
-					'type': 'directory' if child.is_dir() else 'file',
-					'is_sqlite': is_sqlite_file(child),
-					'size_bytes': size_bytes,
-					'size_human': format_size(size_bytes) if child.is_file() else '',
-					'modified_at': format_modified(stat.st_mtime),
+					'current_path': relative_to_root(current_path),
+					'current_abs_path': str(current_path),
+					'parent_path': '' if current_path == explorer_top_root() else relative_to_root(current_path.parent),
+					'entries': entries,
+					'stats': directory_stats(current_path),
+					'warning': f'Permission denied reading some entries: {str(e)}',
+					'error_code': 'PERMISSION_DENIED',
 				}
 			)
 
@@ -79,6 +93,9 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 				'stats': directory_stats(current_path),
 			}
 		)
+	except PermissionError as error:
+		# 권한 거부: 현재 디렉토리에 접근 불가
+		return _json_error(f'Cannot access directory: {str(error)}', 403)
 	except (OSError, SuspiciousOperation) as error:
 		return _json_error(str(error))
 
@@ -160,7 +177,10 @@ def run_query(request: HttpRequest) -> JsonResponse:
 def settings_view(request: HttpRequest) -> JsonResponse:
 	try:
 		if request.method == 'GET':
-			return JsonResponse({'settings': load_settings()})
+			# 토큰은 마스킹해서 반환
+			settings_data = load_settings()
+			settings_data['token'] = '***' if settings_data.get('token') else ''
+			return JsonResponse({'settings': settings_data})
 
 		payload = json.loads(request.body or '{}')
 		settings_data = save_settings(payload)

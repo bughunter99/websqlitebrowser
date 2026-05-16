@@ -110,11 +110,14 @@ class BrowserApiTests(TestCase):
 			content_type='application/json',
 		)
 		self.assertEqual(response.status_code, 200)
+		# POST 응답에서는 토큰이 마스킹됨
+		self.assertEqual(response.json()['settings']['token'], '***')
 
 		response = self.client.get('/api/settings/')
 		payload = response.json()
 		self.assertEqual(payload['settings']['endpoint'], 'http://localhost:11434/v1')
-		self.assertEqual(payload['settings']['token'], 'secret')
+		# GET 응답에서도 토큰은 마스킹됨
+		self.assertEqual(payload['settings']['token'], '***')
 		self.assertEqual(payload['settings']['model'], 'demo')
 
 	def test_chat_requires_llm_settings(self):
@@ -390,3 +393,207 @@ class QuoteIdentifierTests(TestCase):
     def test_multiple_quotes_escaped(self):
         result = services.quote_identifier('a"b"c')
         self.assertEqual(result, 'a""b""c')
+
+
+class SqlInjectionDefenseTests(TestCase):
+    """validate_read_only_sql() – SQL 인젝션 방어"""
+
+    def test_select_statement_allowed(self):
+        # SELECT는 읽기 전용이므로 허용
+        sql = 'SELECT * FROM users'
+        result = services.validate_read_only_sql(sql)
+        self.assertEqual(result.strip(), sql)
+
+    def test_with_statement_allowed(self):
+        # WITH (CTE)는 읽기 전용이므로 허용
+        sql = 'WITH cte AS (SELECT 1) SELECT * FROM cte'
+        result = services.validate_read_only_sql(sql)
+        self.assertIn('WITH', result)
+
+    def test_pragma_allowed(self):
+        # PRAGMA는 읽기 전용이므로 허용
+        sql = 'PRAGMA table_info(users)'
+        result = services.validate_read_only_sql(sql)
+        self.assertIn('PRAGMA', result)
+
+    def test_insert_rejected(self):
+        # INSERT는 쓰기 명령이므로 거부
+        with self.assertRaises(SuspiciousOperation):
+            services.validate_read_only_sql('INSERT INTO users VALUES (1)')
+
+    def test_update_rejected(self):
+        # UPDATE는 쓰기 명령이므로 거부
+        with self.assertRaises(SuspiciousOperation):
+            services.validate_read_only_sql('UPDATE users SET name = "x"')
+
+    def test_delete_rejected(self):
+        # DELETE는 쓰기 명령이므로 거부
+        with self.assertRaises(SuspiciousOperation):
+            services.validate_read_only_sql('DELETE FROM users')
+
+    def test_attach_rejected(self):
+        # ATTACH는 위험한 패턴이므로 거부
+        with self.assertRaises(SuspiciousOperation):
+            services.validate_read_only_sql('ATTACH DATABASE "evil.db" AS evil')
+
+    def test_detach_rejected(self):
+        # DETACH는 위험한 패턴이므로 거부
+        with self.assertRaises(SuspiciousOperation):
+            services.validate_read_only_sql('DETACH DATABASE evil')
+
+    def test_vacuum_rejected(self):
+        # VACUUM은 위험한 패턴이므로 거부
+        with self.assertRaises(SuspiciousOperation):
+            services.validate_read_only_sql('VACUUM')
+
+    def test_sql_line_comment_removed(self):
+        # -- 주석은 제거됨
+        sql = 'SELECT * FROM users -- SELECT * FROM sensitive'
+        result = services.validate_read_only_sql(sql)
+        self.assertNotIn('sensitive', result)
+
+    def test_sql_block_comment_removed(self):
+        # /* */ 주석은 제거됨
+        sql = 'SELECT * FROM users /* DROP TABLE users */'
+        result = services.validate_read_only_sql(sql)
+        self.assertNotIn('DROP', result)
+
+    def test_join_limit_enforced(self):
+        # 6개 이상의 JOIN은 거부 (복잡도 제한)
+        sql = '''
+            SELECT * FROM t1
+            JOIN t2 ON t1.id = t2.id
+            JOIN t3 ON t1.id = t3.id
+            JOIN t4 ON t1.id = t4.id
+            JOIN t5 ON t1.id = t5.id
+            JOIN t6 ON t1.id = t6.id
+            JOIN t7 ON t1.id = t7.id
+        '''
+        with self.assertRaises(SuspiciousOperation):
+            services.validate_read_only_sql(sql)
+
+    def test_subquery_limit_enforced(self):
+        # 4개 이상의 "(SELECT" 패턴은 거부 (복잡도 제한)
+        # 검증에서는 "(SELECT" 또는 "(select" 패턴을 3개 초과로 거부
+        sql = 'SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT 1))))'
+        with self.assertRaises(SuspiciousOperation):
+            services.validate_read_only_sql(sql)
+
+    def test_empty_sql_rejected(self):
+        # 빈 SQL은 거부
+        with self.assertRaises(SuspiciousOperation):
+            services.validate_read_only_sql('   ')
+
+    def test_whitespace_trimmed(self):
+        # 공백은 정리됨
+        sql = '  SELECT 1  '
+        result = services.validate_read_only_sql(sql)
+        self.assertEqual(result, 'SELECT 1')
+
+
+class PathValidationSecurityTests(TestCase):
+    """resolve_repo_path() – 경로 검증 보안"""
+
+    @override_settings(REPOSITORY_ROOT='/tmp/test_repo')
+    def test_null_byte_in_path_rejected(self):
+        # null byte는 경로 조작의 징후이므로 거부
+        with self.assertRaises(SuspiciousOperation):
+            services.resolve_repo_path('file\x00.txt')
+
+    @override_settings(REPOSITORY_ROOT='/tmp/test_repo')
+    def test_non_string_path_rejected(self):
+        # 문자열이 아닌 경로는 거부
+        with self.assertRaises(SuspiciousOperation):
+            services.resolve_repo_path(123)  # type: ignore
+
+    @override_settings(REPOSITORY_ROOT='/tmp/test_repo')
+    def test_resolved_path_within_repo_root(self):
+        # resolve()된 경로가 top_root 범위 내에 있어야 함
+        result = services.resolve_repo_path('subdir')
+        # top_root 이하에 있어야 함
+        top_root = services.explorer_top_root()
+        try:
+            result.relative_to(top_root)
+            # 성공: 범위 내에 있음
+            self.assertTrue(True)
+        except ValueError:
+            self.fail('Path is outside allowed root')
+
+
+class TokenEncryptionTests(TestCase):
+    """토큰 암호화/복호화 테스트"""
+
+    def test_encrypt_decrypt_token(self):
+        # 토큰 암호화 후 복호화
+        original_token = 'sk-proj-abcdefghijklmnopqrstuvwxyz123456789'
+        encrypted = services._encrypt_token(original_token)
+        
+        # 암호화된 토큰은 원본과 다름
+        self.assertNotEqual(encrypted, original_token)
+        
+        # 복호화하면 원본과 같음
+        decrypted = services._decrypt_token(encrypted)
+        self.assertEqual(decrypted, original_token)
+
+    def test_encrypt_empty_token(self):
+        # 빈 토큰은 암호화하지 않음
+        encrypted = services._encrypt_token('')
+        self.assertEqual(encrypted, '')
+
+    def test_decrypt_empty_token(self):
+        # 빈 토큰은 복호화하지 않음
+        decrypted = services._decrypt_token('')
+        self.assertEqual(decrypted, '')
+
+    def test_encrypt_decrypt_special_chars(self):
+        # 특수문자 포함 토큰
+        token = 'token!@#$%^&*()_+-=[]{}|;:,.<>?'
+        encrypted = services._encrypt_token(token)
+        decrypted = services._decrypt_token(encrypted)
+        self.assertEqual(decrypted, token)
+
+
+class SensitiveInfoMaskingTests(TestCase):
+    """민감 정보 마스킹 테스트"""
+
+    def test_mask_absolute_paths_windows(self):
+        # Windows 절대 경로 마스킹
+        content = 'Data is stored in C:\\Users\\Admin\\database.sqlite'
+        masked = services.mask_sensitive_info(content)
+        self.assertNotIn('C:\\', masked)
+        self.assertIn('[DATABASE_PATH]', masked)
+
+    def test_mask_absolute_paths_posix(self):
+        # POSIX 절대 경로 마스킹
+        content = 'Data is stored in /home/user/data/database.sqlite'
+        masked = services.mask_sensitive_info(content)
+        self.assertNotIn('/home/user', masked)
+        self.assertIn('[DATABASE_PATH]', masked)
+
+    def test_mask_token_patterns(self):
+        # 긴 토큰 문자열 마스킹 (40자 이상)
+        content = 'Your token is sk-proj-abcdefghijklmnopqrstuvwxyz1234567890abcdef'
+        masked = services.mask_sensitive_info(content)
+        self.assertIn('[TOKEN]', masked)
+        self.assertNotIn('sk-proj', masked)
+
+    def test_mask_email_addresses(self):
+        # 이메일 주소 마스킹
+        content = 'Contact admin@example.com for help'
+        masked = services.mask_sensitive_info(content)
+        self.assertIn('[EMAIL]', masked)
+        self.assertNotIn('admin@example.com', masked)
+
+    def test_mask_database_path(self):
+        # 데이터베이스 경로 마스킹
+        from pathlib import Path
+        db_path = Path('/repo/sample.db')
+        content = 'Found data in /repo/sample.db with records from /repo'
+        masked = services.mask_sensitive_info(content, db_path)
+        self.assertNotIn('sample.db', masked)
+
+    def test_normal_text_unchanged(self):
+        # 일반 텍스트는 변경되지 않음
+        content = 'This is normal database query result'
+        masked = services.mask_sensitive_info(content)
+        self.assertEqual(masked, content)
