@@ -20,64 +20,6 @@ function attachGridInteractions(container) {
         return isNaN(row) || isNaN(col) ? null : { row, col };
     };
 
-    const getCellKey = (row, col) => `${row},${col}`;
-
-    const getCellByRowCol = (row, col) => {
-        const key = `[data-row="${row}"][data-col="${col}"]`;
-        return grid.querySelector(`.virtual-grid-td${key}, td${key}`);
-    };
-
-    const updateSelectionDisplay = () => {
-        grid.querySelectorAll('td, .virtual-grid-td').forEach((cell) => {
-            const rc = getRowCol(cell);
-            if (!rc) {
-                return;
-            }
-            const key = getCellKey(rc.row, rc.col);
-            cell.classList.toggle('is-selected', state.selectedCells.has(key));
-            cell.classList.toggle('is-active', state.activeCell && state.activeCell.row === rc.row && state.activeCell.col === rc.col);
-        });
-    };
-
-    const setActiveCell = (row, col) => {
-        state.activeCell = { row, col };
-        updateSelectionDisplay();
-        bringActiveCellIntoView(container);
-    };
-
-    const selectRange = (start, end) => {
-        state.selectedCells.clear();
-        const minRow = Math.min(start.row, end.row);
-        const maxRow = Math.max(start.row, end.row);
-        const minCol = Math.min(start.col, end.col);
-        const maxCol = Math.max(start.col, end.col);
-
-        for (let r = minRow; r <= maxRow; r++) {
-            for (let c = minCol; c <= maxCol; c++) {
-                state.selectedCells.add(getCellKey(r, c));
-            }
-        }
-        updateSelectionDisplay();
-    };
-
-    const selectEntireRow = (rowIndex) => {
-        const rowCells = Array.from(grid.querySelectorAll(`[data-row="${rowIndex}"][data-col]`));
-        if (!rowCells.length) {
-            return;
-        }
-        state.selectedCells.clear();
-        rowCells.forEach((cell) => {
-            const rc = getRowCol(cell);
-            if (rc) {
-                state.selectedCells.add(getCellKey(rc.row, rc.col));
-            }
-        });
-        const first = getRowCol(rowCells[0]);
-        if (first) {
-            setActiveCell(first.row, first.col);
-        }
-        updateSelectionDisplay();
-    };
 
     // Mouse interactions
     grid.addEventListener('mousedown', (event) => {
@@ -97,15 +39,15 @@ function attachGridInteractions(container) {
         state.gridLastClickedCell = rc;
 
         if (event.shiftKey && state.activeCell) {
-            selectRange(state.activeCell, rc);
+            gridSelectRange(grid, state.activeCell, rc);
         } else if (event.ctrlKey || event.metaKey) {
-            const key = getCellKey(rc.row, rc.col);
+            const key = getGridCellKey(rc.row, rc.col);
             state.selectedCells.has(key) ? state.selectedCells.delete(key) : state.selectedCells.add(key);
-            setActiveCell(rc.row, rc.col);
+            gridSetActiveCell(grid, container, rc.row, rc.col);
         } else {
             state.selectedCells.clear();
-            state.selectedCells.add(getCellKey(rc.row, rc.col));
-            setActiveCell(rc.row, rc.col);
+            state.selectedCells.add(getGridCellKey(rc.row, rc.col));
+            gridSetActiveCell(grid, container, rc.row, rc.col);
         }
     });
 
@@ -124,7 +66,7 @@ function attachGridInteractions(container) {
             return;
         }
 
-        selectRange(state.gridLastClickedCell, rc);
+        gridSelectRange(grid, state.gridLastClickedCell, rc);
     });
 
     grid.addEventListener('contextmenu', (event) => {
@@ -154,18 +96,19 @@ function attachGridInteractions(container) {
             if (action === 'copy-cell') {
                 copyTextToClipboard(cell.textContent || '');
             } else if (action === 'copy-selected') {
-                copySelectedCells();
+                copySelectedGridCells();
             } else if (action === 'select-row') {
-                selectEntireRow(rc.row);
+                gridSelectEntireRow(grid, rc.row);
             } else if (action === 'clear-selection') {
                 state.selectedCells.clear();
-                updateSelectionDisplay();
+                updateGridSelectionDisplay(grid);
             }
             hideGridContextMenu();
         };
 
         menu.addEventListener('click', (menuEvent) => {
-            const button = menuEvent.target.closest('button[data-action]');
+            // @ts-ignore - closest method exists on EventTarget
+            const button = menuEvent.target?.closest('button[data-action]');
             if (!button) {
                 return;
             }
@@ -189,7 +132,8 @@ function attachGridInteractions(container) {
         if (!gridContextMenu) {
             return;
         }
-        if (event.target.closest('.grid-context-menu')) {
+        // @ts-ignore - closest exists on EventTarget in DOM API
+        if (event.target?.closest('.grid-context-menu')) {
             return;
         }
         hideGridContextMenu();
@@ -237,35 +181,25 @@ function attachGridInteractions(container) {
             event.preventDefault();
             state.selectedCells.clear();
             allCells.forEach((rc) => {
-                state.selectedCells.add(getCellKey(rc.row, rc.col));
+                state.selectedCells.add(getGridCellKey(rc.row, rc.col));
             });
-            updateSelectionDisplay();
+            updateGridSelectionDisplay(grid);
             return;
         }
 
         if (event.shiftKey && !event.ctrlKey && !event.metaKey) {
-            selectRange(state.activeCell, { row: newRow, col: newCol });
+            gridSelectRange(grid, state.activeCell, { row: newRow, col: newCol });
         } else {
             state.selectedCells.clear();
-            state.selectedCells.add(getCellKey(newRow, newCol));
-            setActiveCell(newRow, newCol);
+            state.selectedCells.add(getGridCellKey(newRow, newCol));
+            gridSetActiveCell(grid, container, newRow, newCol);
         }
 
         event.preventDefault();
     });
 
-    // Auto-activate first cell if no active cell set
-    if (!state.activeCell) {
-        const firstCell = grid.querySelector('td, .virtual-grid-td');
-        if (firstCell) {
-            const rc = getRowCol(firstCell);
-            if (rc) {
-                setActiveCell(rc.row, rc.col);
-            }
-        }
-    }
-
-    updateSelectionDisplay();
+    gridActivateInitialCell(grid);
+    updateGridSelectionDisplay(grid);
 }
 
 /**
@@ -294,45 +228,3 @@ function bringActiveCellIntoView(container) {
     }
 }
 
-/**
- * 선택된 셀들을 클립보드에 복사
- */
-function copySelectedCells() {
-    const selectedCells = Array.from(document.querySelectorAll('.result-grid td.is-selected, .virtual-grid-td.is-selected'));
-    if (!selectedCells.length) {
-        return false;
-    }
-
-    const groupedRows = new Map();
-    selectedCells
-        .sort((left, right) => Number(left.dataset.row) - Number(right.dataset.row) || Number(left.dataset.col) - Number(right.dataset.col))
-        .forEach((cell) => {
-            const rowIndex = Number(cell.dataset.row);
-            if (!groupedRows.has(rowIndex)) {
-                groupedRows.set(rowIndex, []);
-            }
-            groupedRows.get(rowIndex).push(cell.textContent);
-        });
-
-    const clipboardText = Array.from(groupedRows.values()).map((row) => row.join('\t')).join('\n');
-
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(clipboardText).catch(() => {
-            const textarea = document.createElement('textarea');
-            textarea.value = clipboardText;
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            textarea.remove();
-        });
-    } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = clipboardText;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        textarea.remove();
-    }
-
-    return true;
-}

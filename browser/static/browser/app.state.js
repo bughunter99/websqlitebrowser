@@ -1,15 +1,51 @@
 /**
  * app.state.js - State Management
- * 애플리케이션의 전역 상태와 DOM 요소 캐싱
+ * 애플리케이션의 전역 상태를 보관하는 저장소
  */
 
+/**
+ * 상태 변화를 추적하는 Observable 상태 생성
+ * @param {Object} initialState 초기 상태 객체
+ * @returns {Proxy} Observable state Proxy
+ */
+function createObservableState(initialState) {
+    return new Proxy(initialState, {
+        set: (target, property, value) => {
+            const oldValue = target[property];
+            
+            // 값이 실제로 변경되었을 때만 로깅
+            if (oldValue !== value) {
+                // Map/Set 같은 특수 객체는 내용 비교가 필요하므로 로그하지 않음
+                if (!(oldValue instanceof Map || oldValue instanceof Set || value instanceof Map || value instanceof Set)) {
+                    const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+                    // 긴 값은 축약
+                    const displayOld = typeof oldValue === 'string' && oldValue.length > 50 ? oldValue.substring(0, 50) + '...' : oldValue;
+                    const displayNew = typeof value === 'string' && value.length > 50 ? value.substring(0, 50) + '...' : value;
+                    console.log(`[${timestamp}] STATE ${property}: ${displayOld} → ${displayNew}`);
+                }
+            }
+            
+            target[property] = value;
+            return true;
+        }
+    });
+}
+
 // 애플리케이션 전역 상태
-const state = {
+const state = createObservableState({
     currentPath: '',
     currentDatabase: null,
     activeTab: null,
     loadedTables: new Map(),
     tableTabIds: new Map(),
+    tableLoadRequestSeq: 0,
+    tableLoadRequestIds: new Map(),
+    queryRequestSeq: 0,
+    activeQueryRequestId: 0,
+    queryPending: false,
+    chatRequestSeq: 0,
+    activeChatRequestId: 0,
+    chatPending: false,
     explorerFilter: '',
     lastTreeData: null,
     selectedExplorerPath: '',
@@ -20,35 +56,7 @@ const state = {
     selectionEnd: null, // { row, col }
     gridDragging: false,
     gridLastClickedCell: null,
-};
-
-// DOM 요소 캐싱
-const domElements = {
-    // Explorer
-    explorerList: document.getElementById('explorer-list'),
-    explorerStatusbar: document.getElementById('explorer-statusbar'),
-    explorerFilter: document.getElementById('explorer-filter'),
-
-    // Panel
-    panelStack: document.querySelector('.panel-stack'),
-    currentPath: document.getElementById('workspace-root'),
-    tabs: document.getElementById('tabs'),
-    workspaceFrame: document.querySelector('.workspace-frame'),
-    welcomeTab: document.getElementById('welcome-tab'),
-
-    // Chat
-    chatResponse: document.getElementById('chat-response'),
-
-    // File/Workspace
-    workspaceFile: document.getElementById('workspace-file'),
-    workspaceReload: document.getElementById('workspace-reload'),
-
-    // Output
-    outputBody: document.getElementById('output-body'),
-
-    // Rail buttons
-    railButtons: Array.from(document.querySelectorAll('.rail-button')),
-};
+});
 
 // 상태 관련 변수들
 const gridRenderState = new WeakMap();

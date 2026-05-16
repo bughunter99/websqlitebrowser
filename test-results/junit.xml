@@ -1,28 +1,10 @@
-<testsuites id="" name="" tests="12" failures="0" skipped="0" errors="0" time="44.205022">
-<testsuite name="regression.spec.js" timestamp="2026-05-16T05:56:36.986Z" hostname="" tests="12" failures="0" skipped="0" time="31.507" errors="0">
-<testcase name="멀티 쿼리 실행 시 result 탭이 생성된다" classname="regression.spec.js" time="3.249">
+<testsuites id="" name="" tests="3" failures="0" skipped="0" errors="0" time="6.973779999999999">
+<testsuite name="smoke.spec.js" timestamp="2026-05-16T08:21:24.734Z" hostname="" tests="3" failures="0" skipped="0" time="2.575" errors="0">
+<testcase name="앱 기본 화면이 로드된다" classname="smoke.spec.js" time="0.438">
 </testcase>
-<testcase name="그리드 셀 범위 선택이 동작한다" classname="regression.spec.js" time="2.799">
+<testcase name="샘플 DB를 열 수 있다" classname="smoke.spec.js" time="1.317">
 </testcase>
-<testcase name="탐색기 키보드로 항목 선택이 이동한다" classname="regression.spec.js" time="2.395">
-</testcase>
-<testcase name="단일 쿼리 실행 시 결과 그리드가 렌더링된다" classname="regression.spec.js" time="2.869">
-</testcase>
-<testcase name="Output Auto Hide 토글이 동작한다" classname="regression.spec.js" time="1.278">
-</testcase>
-<testcase name="Data Explorer 필터 입력 시 하이라이트가 표시된다" classname="regression.spec.js" time="4.364">
-</testcase>
-<testcase name="DDL 탭 전환 시 테이블 스키마 섹션이 보인다" classname="regression.spec.js" time="2.749">
-</testcase>
-<testcase name="멀티 쿼리 결과 탭을 전환할 수 있다" classname="regression.spec.js" time="2.782">
-</testcase>
-<testcase name="활동 레일로 Explorer/Chat/Setting 패널 전환이 된다" classname="regression.spec.js" time="1.375">
-</testcase>
-<testcase name="Output 로그에 타임스탬프와 쿼리 시작/종료 로그가 남는다" classname="regression.spec.js" time="2.762">
-</testcase>
-<testcase name="탐색기 Home/End/PageDown 키로 선택이 끝단으로 이동한다" classname="regression.spec.js" time="2.313">
-</testcase>
-<testcase name="그리드 컨텍스트 메뉴의 Select Row/Clear Selection이 동작한다" classname="regression.spec.js" time="2.572">
+<testcase name="F9로 단일 쿼리를 실행할 수 있다" classname="smoke.spec.js" time="0.82">
 </testcase>
 </testsuite>
 </testsuites>

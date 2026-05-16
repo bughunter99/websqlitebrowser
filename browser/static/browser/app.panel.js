@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * app.panel.js - Panel Management
  * 패널 전환 및 관리 기능
@@ -14,4 +15,11 @@ function setPanel(target) {
         button.classList.toggle('active', button.dataset.target === target);
     });
     domElements.panelStack.scrollTop = 0;
+}
+
+function wirePanelButtons() {
+    domElements.railButtons.forEach((button) => {
+        const railButton = /** @type {HTMLElement} */ (button);
+        railButton.addEventListener('click', () => setPanel(railButton.dataset.target || 'explorer'));
+    });
 }

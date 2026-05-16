@@ -4,64 +4,15 @@
  */
 
 /** @typedef {{ [key: string]: unknown }} QueryRow */
-/** @typedef {{ columns?: string[], rows?: QueryRow[], row_count?: number, truncated?: boolean, statement_index?: number }} QueryResult */
 /** @typedef {{ columns?: string[], rows?: QueryRow[], row_count?: number, truncated?: boolean, results?: QueryResult[] }} QueryResponse */
 
-/**
- * @param {HTMLElement} target
- * @param {QueryResult[]} results
- */
-function renderMultiQueryResults(target, results) {
-    if (!Array.isArray(results) || !results.length) {
-        target.className = 'status-box';
-        target.textContent = '조회 결과가 없습니다.';
-        return;
+function setQueryPending(isPending) {
+    const editor = document.getElementById('sql-editor');
+    if (editor instanceof HTMLTextAreaElement) {
+        editor.readOnly = isPending;
+        editor.classList.toggle('is-pending', isPending);
     }
-
-    target.className = '';
-    target.innerHTML = `
-        <div class="query-multi-results">
-            <div class="query-multi-panels" id="query-multi-panels"></div>
-            <div class="query-multi-tabs" id="query-multi-tabs"></div>
-        </div>
-    `;
-
-    const tabsHost = target.querySelector('#query-multi-tabs');
-    const panelsHost = target.querySelector('#query-multi-panels');
-    if (!tabsHost || !panelsHost) {
-        return;
-    }
-
-    const activate = (index) => {
-        tabsHost.querySelectorAll('.query-multi-tab').forEach((button) => {
-            const el = /** @type {HTMLElement} */ (button);
-            button.classList.toggle('active', Number(el.dataset.index) === index);
-        });
-        panelsHost.querySelectorAll('.query-multi-panel').forEach((panel) => {
-            const el = /** @type {HTMLElement} */ (panel);
-            panel.classList.toggle('active', Number(el.dataset.index) === index);
-        });
-    };
-
-    results.forEach((result, idx) => {
-        const index = idx + 1;
-        const tab = document.createElement('button');
-        tab.className = 'query-multi-tab';
-        tab.dataset.index = String(index);
-        tab.textContent = `result${index}`;
-        tab.addEventListener('click', () => activate(index));
-        tabsHost.appendChild(tab);
-
-        const panel = document.createElement('div');
-        panel.className = 'query-multi-panel';
-        panel.dataset.index = String(index);
-        panelsHost.appendChild(panel);
-
-        renderResultContent(panel, result.columns || [], result.rows || []);
-        attachGridInteractions(panel);
-    });
-
-    activate(1);
+    state.queryPending = isPending;
 }
 
 async function runQuery() {
@@ -70,69 +21,104 @@ async function runQuery() {
         return;
     }
 
-    if (!state.currentDatabase) {
-        const selectedRow = getSelectedExplorerRow();
-        if (selectedRow && selectedRow.dataset.type === 'file' && selectedRow.dataset.isSqlite === '1') {
-            await openDatabase(selectedRow.dataset.path || '');
-        }
-
-        if (!state.currentDatabase) {
-            target.className = 'status-box error';
-            target.textContent = 'SQLite 파일을 먼저 열어주세요.';
-            return;
-        }
-    }
-
-    const sqlEditor = document.getElementById('sql-editor');
-    if (!(sqlEditor instanceof HTMLTextAreaElement)) {
-        target.className = 'status-box error';
-        target.textContent = 'SQL 에디터를 찾을 수 없습니다.';
+    if (state.queryPending) {
+        outputLog('QUERY SKIP pending=true', 'warn');
         return;
     }
 
-    const sql = sqlEditor.value;
-    const startedAt = new Date();
-    const startedAtText = formatDateTime(startedAt);
-    setStatus('Running query…', state.currentDatabase.name);
-    target.className = 'status-box';
-    target.textContent = '실행 중...';
-    outputLog(`QUERY START at=${startedAtText} db=${state.currentDatabase.name}`);
-    outputLog(`QUERY SQL ${sql.replace(/\s+/g, ' ').trim().slice(0, 180)}`);
-
     try {
-        const data = /** @type {QueryResponse} */ (await requestJson('/api/query/', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: state.currentDatabase.path, sql }),
-        }));
-        const finishedAt = new Date();
-        const elapsedMs = finishedAt.getTime() - startedAt.getTime();
-        const finishedAtText = formatDateTime(finishedAt);
+        if (!state.currentDatabase) {
+            const selectedRow = getSelectedExplorerRow();
+            if (selectedRow && selectedRow.dataset.type === 'file' && selectedRow.dataset.isSqlite === '1') {
+                await openDatabase(selectedRow.dataset.path || '');
+            }
 
-        if (Array.isArray(data.results)) {
-            renderMultiQueryResults(target, data.results);
-            const totalRows = data.results.reduce(
-                (acc, item) => acc + Number(item.row_count || item.rows?.length || 0),
-                0
-            );
-            setStatus(`Results: ${data.results.length} | Rows: ${totalRows}`, `${elapsedMs} ms`);
-            outputLog(`QUERY END at=${finishedAtText} elapsed=${elapsedMs}ms results=${data.results.length} rows=${totalRows}`);
-            data.results.forEach((item, index) => {
-                outputLog(`RESULT ${index + 1} rows=${Number(item.row_count || item.rows?.length || 0)}${item.truncated ? ' truncated=true' : ''}`);
-            });
-        } else {
-            target.className = '';
-            renderResultContent(target, data.columns, data.rows);
-            attachGridInteractions(target);
-            const fetchedRows = Number(data.row_count || 0);
-            const truncatedText = data.truncated ? ' | Truncated' : '';
-            setStatus(`Rows: ${fetchedRows}${truncatedText}`, `${elapsedMs} ms`);
-            outputLog(`QUERY END at=${finishedAtText} elapsed=${elapsedMs}ms rows=${fetchedRows}${data.truncated ? ' truncated=true' : ''}`);
+            if (!state.currentDatabase) {
+                target.className = 'status-box error';
+                target.textContent = 'SQLite 파일을 먼저 열어주세요.';
+                return;
+            }
         }
-    } catch (error) {
-        target.className = 'status-box error';
-        target.textContent = error.message;
-        setStatus('Query failed', error.message);
-        outputLog(`QUERY ERROR ${error.message}`, 'error');
+
+        const sqlEditor = document.getElementById('sql-editor');
+        if (!(sqlEditor instanceof HTMLTextAreaElement)) {
+            target.className = 'status-box error';
+            target.textContent = 'SQL 에디터를 찾을 수 없습니다.';
+            return;
+        }
+
+        const sql = sqlEditor.value;
+        const databasePath = state.currentDatabase.path;
+        const requestId = state.queryRequestSeq + 1;
+        state.queryRequestSeq = requestId;
+        state.activeQueryRequestId = requestId;
+
+        const isStaleQueryResponse = () => {
+            return state.activeQueryRequestId !== requestId
+                || !state.currentDatabase
+                || state.currentDatabase.path !== databasePath;
+        };
+
+        const startedAt = new Date();
+        const startedAtText = formatDateTime(startedAt);
+        setStatus('Running query…', state.currentDatabase.name);
+        target.className = 'status-box';
+        target.textContent = '실행 중...';
+        outputLog(`QUERY START request=${requestId} at=${startedAtText} db=${state.currentDatabase.name}`);
+        outputLog(`QUERY SQL request=${requestId} ${sql.replace(/\s+/g, ' ').trim().slice(0, 180)}`);
+        setQueryPending(true);
+
+        try {
+            const data = /** @type {QueryResponse} */ (await requestJson('/api/query/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: databasePath, sql }),
+            }));
+            if (isStaleQueryResponse()) {
+                outputLog(`QUERY STALE IGNORED request=${requestId} elapsed=${Date.now() - startedAt.getTime()}ms`, 'warn');
+                return;
+            }
+
+            const finishedAt = new Date();
+            const elapsedMs = finishedAt.getTime() - startedAt.getTime();
+            const finishedAtText = formatDateTime(finishedAt);
+
+            if (Array.isArray(data.results)) {
+                renderMultiQueryResults(target, data.results);
+                const totalRows = data.results.reduce(
+                    (acc, item) => acc + Number(item.row_count || item.rows?.length || 0),
+                    0
+                );
+                setStatus(`Results: ${data.results.length} | Rows: ${totalRows}`, `${elapsedMs} ms`);
+                outputLog(`QUERY END request=${requestId} at=${finishedAtText} elapsed=${elapsedMs}ms results=${data.results.length} rows=${totalRows}`);
+                data.results.forEach((item, index) => {
+                    outputLog(`RESULT request=${requestId} ${index + 1} rows=${Number(item.row_count || item.rows?.length || 0)}${item.truncated ? ' truncated=true' : ''}`);
+                });
+            } else {
+                target.className = '';
+                renderResultContent(target, data.columns, data.rows);
+                attachGridInteractions(target);
+                const fetchedRows = Number(data.row_count || 0);
+                const truncatedText = data.truncated ? ' | Truncated' : '';
+                setStatus(`Rows: ${fetchedRows}${truncatedText}`, `${elapsedMs} ms`);
+                outputLog(`QUERY END request=${requestId} at=${finishedAtText} elapsed=${elapsedMs}ms rows=${fetchedRows}${data.truncated ? ' truncated=true' : ''}`);
+            }
+        } catch (error) {
+            if (isStaleQueryResponse()) {
+                outputLog(`QUERY STALE ERROR IGNORED request=${requestId} elapsed=${Date.now() - startedAt.getTime()}ms`, 'warn');
+                return;
+            }
+            target.className = 'status-box error';
+            // @ts-ignore - error object has message property
+            const errorMsg = error?.message || String(error);
+            target.textContent = errorMsg;
+            setStatus('Query failed', errorMsg);
+            outputLog(`QUERY ERROR request=${requestId} ${errorMsg}`, 'error');
+        } finally {
+            setQueryPending(false);
+        }
+    } catch (outerError) {
+        setQueryPending(false);
+        outputLog(`QUERY UNEXPECTED ERROR ${outerError instanceof Error ? outerError.message : String(outerError)}`, 'error');
     }
 }

@@ -27,7 +27,12 @@ function asJsonObject(value) {
  */
 async function requestJson(url, options = {}) {
     const response = await fetch(url, { cache: 'no-store', ...options });
-    const parsed = await response.json().catch(() => ({}));
+    let parsed;
+    try {
+        parsed = await response.json();
+    } catch {
+        throw new Error('서버 응답 형식이 올바르지 않습니다.');
+    }
     const data = asJsonObject(parsed);
     if (!response.ok) {
         const message = typeof data.error === 'string' ? data.error : '요청 처리 중 오류가 발생했습니다.';
