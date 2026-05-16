@@ -27,7 +27,7 @@ class BrowserApiTests(TestCase):
 
 		payload = response.json()
 		self.assertEqual(payload['current_path'], '')
-		self.assertEqual(payload['parent_path'], '')
+		self.assertEqual(payload['parent_path'], '..')
 		self.assertEqual(payload['entries'][0]['name'], 'sample.db')
 		self.assertTrue(payload['entries'][0]['is_sqlite'])
 		self.assertIn('size_human', payload['entries'][0])

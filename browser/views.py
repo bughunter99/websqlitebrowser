@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import shutil
 import sqlite3
@@ -39,10 +40,16 @@ def _repository_root() -> Path:
 	return Path(settings.REPOSITORY_ROOT).resolve()
 
 
+def _explorer_top_root() -> Path:
+	# Allow browsing one level above repository root for "../" navigation on first screen.
+	return _repository_root().parent
+
+
 def _resolve_repo_path(relative_path: str = '') -> Path:
-	root = _repository_root()
-	candidate = (root / relative_path).resolve()
-	if candidate != root and root not in candidate.parents:
+	repo_root = _repository_root()
+	top_root = _explorer_top_root()
+	candidate = (repo_root / relative_path).resolve()
+	if candidate != top_root and top_root not in candidate.parents:
 		raise SuspiciousOperation('Path is outside repository root.')
 	return candidate
 
@@ -53,9 +60,10 @@ def _is_sqlite_file(path: Path) -> bool:
 
 def _relative_to_root(path: Path) -> str:
 	root = _repository_root()
-	if path == root:
+	relative = os.path.relpath(path, root)
+	if relative == '.':
 		return ''
-	return path.relative_to(root).as_posix()
+	return relative.replace('\\', '/')
 
 
 def _format_size(value: int) -> str:
@@ -438,7 +446,7 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 			)
 
 		parent = ''
-		if current_path != _repository_root():
+		if current_path != _explorer_top_root():
 			parent = _relative_to_root(current_path.parent)
 
 		return JsonResponse(

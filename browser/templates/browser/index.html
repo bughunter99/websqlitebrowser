@@ -45,7 +45,8 @@
 
         .app-shell {
             display: grid;
-            grid-template-columns: 304px 1fr;
+            grid-template-columns: clamp(240px, 23vw, 304px) minmax(0, 1fr);
+            height: 100vh;
             height: 100dvh;
             gap: 8px;
             padding: 8px;
@@ -57,6 +58,7 @@
             background: var(--surface);
             border: 1px solid var(--line);
             box-shadow: var(--shadow);
+            min-width: 0;
             min-height: 0;
         }
 
@@ -226,7 +228,7 @@
         }
 
         .explorer-list {
-            display: grid;
+            display: block;
             gap: 0;
             min-height: 0;
             overflow: auto;
@@ -281,14 +283,8 @@
             min-width: 0;
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 0;
             overflow: hidden;
-        }
-
-        .explorer-kind {
-            color: var(--muted);
-            font-size: 0.56rem;
-            flex: 0 0 auto;
         }
 
         .explorer-name {
@@ -399,7 +395,7 @@
             flex: 0 0 auto;
             min-height: 26px;
             padding: 3px 8px;
-            font-size: 0.7rem;
+            font-size: 0.64rem;
             line-height: 1;
         }
 
@@ -417,7 +413,7 @@
             background: var(--surface);
             border: 1px solid var(--line-strong);
             border-radius: 4px;
-            padding: 6px;
+            padding: 4px;
             overflow: auto;
         }
 
@@ -427,10 +423,31 @@
 
         .query-layout {
             display: grid;
-            grid-template-rows: minmax(150px, 1fr) minmax(128px, 1fr);
-            gap: 4px;
+            --query-top-ratio: 44%;
+            grid-template-rows: minmax(90px, var(--query-top-ratio)) 6px minmax(90px, 1fr);
+            gap: 0;
             min-height: 0;
             height: 100%;
+            overflow: hidden;
+        }
+
+        .query-pane {
+            min-height: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .query-splitter {
+            cursor: row-resize;
+            background: linear-gradient(180deg, #e8edf5, #d6deea);
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .query-splitter:hover {
+            background: linear-gradient(180deg, #d5e4f8, #bdd3f0);
         }
 
         textarea,
@@ -448,10 +465,31 @@
             resize: vertical;
         }
 
+        #sql-editor {
+            flex: 1;
+            min-height: 0;
+            resize: none;
+            font-size: 0.66rem;
+            line-height: 1.3;
+        }
+
+        .query-result-wrap {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            overflow: hidden;
+        }
+
+        #query-result {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+        }
+
         .section-label {
             display: block;
             margin-bottom: 4px;
-            font-size: 0.72rem;
+            font-size: 0.64rem;
             color: var(--muted);
         }
 
@@ -531,7 +569,7 @@
             border: 1px solid var(--line-strong);
             border-radius: 4px;
             background: var(--surface-strong);
-            max-height: 30vh;
+            max-height: none;
         }
 
         .result-grid td {
@@ -550,10 +588,10 @@
 
         th,
         td {
-            padding: 6px 7px;
+            padding: 4px 6px;
             border-bottom: 1px solid #d6deea;
             text-align: left;
-            font-size: 0.74rem;
+            font-size: 0.66rem;
             vertical-align: top;
         }
 
@@ -565,12 +603,12 @@
 
         .empty-state,
         .status-box {
-            padding: 8px;
+            padding: 6px;
             border-radius: 4px;
             background: var(--surface-strong);
             border: 1px solid var(--line);
             color: var(--muted);
-            font-size: 0.68rem;
+            font-size: 0.64rem;
         }
 
         .status-box.error {
@@ -600,13 +638,13 @@
 
         .ddl-section h4 {
             margin: 0;
-            font-size: 0.84rem;
+            font-size: 0.74rem;
         }
 
         .ddl-subtitle {
             margin: 0;
             color: var(--muted);
-            font-size: 0.75rem;
+            font-size: 0.66rem;
         }
 
         .ddl-grid {
@@ -622,7 +660,7 @@
             background: #202a38;
             color: #e8effa;
             white-space: pre-wrap;
-            font-size: 0.75rem;
+            font-size: 0.66rem;
         }
 
         .meta-table {
@@ -639,9 +677,9 @@
 
         .meta-table th,
         .meta-table td {
-            padding: 6px 8px;
+            padding: 4px 6px;
             border-bottom: 1px solid #d6deea;
-            font-size: 0.74rem;
+            font-size: 0.66rem;
         }
 
         .toolbar {
@@ -725,7 +763,7 @@
                                 <button class="button-primary" id="save-settings">저장</button>
                                 <button class="button-secondary" id="test-settings">연결 테스트</button>
                             </div>
-                            <div class="status-box" id="settings-status">서버의 repository 설정 파일에 저장합니다.</div>
+                            <div class="status-box" id="settings-status"></div>
                         </div>
                     </section>
                 </div>
@@ -762,15 +800,8 @@
 
                     <div class="workspace-frame">
                         <section class="tab-content active" id="welcome-tab">
-                            <div class="empty-state">
-                                repository 폴더에서 샘플 SQLite를 바로 열 수 있게 구성해두었습니다. SQLite 파일을 선택한 뒤 View를 누르면 Query, DDL, 테이블 탭이 열립니다.
-                            </div>
+                            <div class="empty-state"></div>
                         </section>
-                    </div>
-
-                    <div class="workspace-statusbar">
-                        <span id="status-left">Ready</span>
-                        <span id="status-right">Ctrl+C copy, F9 run</span>
                     </div>
                 </div>
             </section>
@@ -797,8 +828,6 @@
         const chatResponse = document.getElementById('chat-response');
         const workspaceRoot = document.getElementById('workspace-root');
         const workspaceFile = document.getElementById('workspace-file');
-        const statusLeft = document.getElementById('status-left');
-        const statusRight = document.getElementById('status-right');
         const workspaceReload = document.getElementById('workspace-reload');
         const workspaceFocusQuery = document.getElementById('workspace-focus-query');
 
@@ -806,10 +835,12 @@
         let selectedExplorerPath = '';
 
         function setStatus(leftText, rightText) {
-            if (leftText !== undefined) {
+            const statusLeft = document.getElementById('status-left');
+            const statusRight = document.getElementById('status-right');
+            if (statusLeft && leftText !== undefined) {
                 statusLeft.textContent = leftText;
             }
-            if (rightText !== undefined) {
+            if (statusRight && rightText !== undefined) {
                 statusRight.textContent = rightText;
             }
         }
@@ -840,7 +871,6 @@
                 button.classList.toggle('active', button.dataset.target === target);
             });
             panelStack.scrollTop = 0;
-            setStatus(`Panel: ${target}`, 'Ctrl+C copy, F9 run');
         }
 
         function renderExplorer(treeData) {
@@ -854,7 +884,7 @@
             `;
 
             const allEntries = [];
-            if (treeData.current_path) {
+            if (treeData.parent_path) {
                 allEntries.push({
                     name: '../',
                     path: treeData.parent_path || '',
@@ -867,14 +897,12 @@
             allEntries.push(...entries);
 
             const rows = allEntries.map((entry) => {
-                const kind = entry.type === 'parent' ? '[UP]' : entry.type === 'directory' ? '[DIR]' : (entry.is_sqlite ? '[DB]' : '[FILE]');
                 const sizeText = entry.type === 'file' ? (entry.size_human || '0 B') : '';
                 const selectedClass = selectedExplorerPath && selectedExplorerPath === entry.path ? ' selected' : '';
                 const parentClass = entry.type === 'parent' ? ' parent-row' : '';
                 return `
                     <div class="explorer-row${selectedClass}${parentClass}" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.type)}" data-is-sqlite="${entry.is_sqlite ? '1' : '0'}">
                         <div class="explorer-name-col">
-                            <span class="explorer-kind">${kind}</span>
                             <span class="explorer-name">${escapeHtml(entry.name)}</span>
                         </div>
                         <div class="explorer-size">${escapeHtml(sizeText)}</div>
@@ -892,7 +920,6 @@
                 state.currentPath = data.current_path;
                 currentPath.textContent = `repository${data.current_path ? `/${data.current_path}` : ''}`;
                 workspaceRoot.textContent = currentPath.textContent;
-                setStatus(`Browsing: ${currentPath.textContent}`, 'Select a SQLite file to open it');
                 const parentButton = document.getElementById('go-parent');
                 parentButton.dataset.parentPath = data.parent_path;
                 parentButton.disabled = !data.parent_path;
@@ -906,11 +933,6 @@
                     `disk ${Number(disk.used_percent || 0).toFixed(1)}%`,
                 ].join(' | ');
 
-                explorerList.innerHTML = '';
-                if (!data.entries.length) {
-                    explorerList.innerHTML = '<div class="empty-state">폴더가 비어 있습니다.</div>';
-                    return;
-                }
                 renderExplorer(data);
             } catch (error) {
                 explorerList.innerHTML = `<div class="status-box error">${escapeHtml(error.message)}</div>`;
@@ -1127,6 +1149,78 @@
             });
         }
 
+        function initQuerySplit() {
+            const layout = document.getElementById('query-layout');
+            const splitter = document.getElementById('query-splitter');
+            const editorPane = document.getElementById('query-pane-editor');
+            if (!layout || !splitter || !editorPane) {
+                return;
+            }
+
+            let dragging = false;
+            let startY = 0;
+            let startHeight = 0;
+            const splitterHeight = 6;
+            const minTop = 90;
+            const minBottom = 90;
+            let ratio = 44;
+
+            const applyRatio = () => {
+                const safe = Math.max(22, Math.min(78, ratio));
+                layout.style.setProperty('--query-top-ratio', `${safe}%`);
+            };
+
+            applyRatio();
+
+            const onPointerMove = (event) => {
+                if (!dragging) {
+                    return;
+                }
+
+                const rect = layout.getBoundingClientRect();
+                const deltaY = event.clientY - startY;
+                let nextTop = startHeight + deltaY;
+                const maxTop = rect.height - splitterHeight - minBottom;
+                if (nextTop < minTop) {
+                    nextTop = minTop;
+                }
+                if (nextTop > maxTop) {
+                    nextTop = maxTop;
+                }
+
+                const movableHeight = Math.max(1, rect.height - splitterHeight);
+                ratio = (nextTop / movableHeight) * 100;
+                applyRatio();
+            };
+
+            const stopDragging = () => {
+                dragging = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            };
+
+            splitter.addEventListener('pointerdown', (event) => {
+                dragging = true;
+                startY = event.clientY;
+                startHeight = editorPane.getBoundingClientRect().height;
+                document.body.style.cursor = 'row-resize';
+                document.body.style.userSelect = 'none';
+                splitter.setPointerCapture(event.pointerId);
+            });
+
+            splitter.addEventListener('pointermove', onPointerMove);
+            splitter.addEventListener('pointerup', stopDragging);
+            splitter.addEventListener('pointercancel', stopDragging);
+            splitter.addEventListener('dblclick', () => {
+                ratio = 44;
+                applyRatio();
+            });
+
+            window.addEventListener('resize', () => {
+                applyRatio();
+            });
+        }
+
         async function openDatabase(path) {
             try {
                 const data = await requestJson(`/api/database/?path=${encodeURIComponent(path)}`);
@@ -1147,17 +1241,20 @@
                     'query',
                     'Query',
                     `
-                        <div class="query-layout">
-                            <div>
+                        <div class="query-layout" id="query-layout">
+                            <div class="query-pane" id="query-pane-editor">
                                 <label class="section-label" for="sql-editor">SQL</label>
                                 <textarea id="sql-editor">SELECT name FROM sqlite_master WHERE type = 'table';</textarea>
-                                <div class="button-row" style="margin-top: 12px;">
+                                <div class="button-row" style="margin-top: 2px;">
                                     <button class="button-primary" id="run-query-button">실행</button>
                                 </div>
                             </div>
-                            <div>
+                            <div class="query-splitter" id="query-splitter" role="separator" aria-orientation="horizontal" title="드래그해서 높이 조정"></div>
+                            <div class="query-pane query-pane-result">
                                 <label class="section-label">결과</label>
-                                <div id="query-result" class="status-box">실행 결과가 여기 표시됩니다.</div>
+                                <div class="query-result-wrap">
+                                    <div id="query-result" class="status-box"></div>
+                                </div>
                             </div>
                         </div>
                     `
@@ -1177,8 +1274,7 @@
                         tabId,
                         table.name,
                         `
-                            <div class="status-box">${table.columns.length ? `컬럼: ${escapeHtml(table.columns.map((column) => column.name).join(', '))}` : '컬럼 정보 없음'}</div>
-                            <div id="table-result-${tabId}" class="status-box" style="margin-top: 12px;">테이블을 열면 결과를 불러옵니다.</div>
+                            <div id="table-result-${tabId}" class="status-box"></div>
                         `
                     );
 
@@ -1191,6 +1287,7 @@
 
                 document.getElementById('run-query-button').addEventListener('click', runQuery);
                 document.getElementById('test-settings').addEventListener('click', testSettingsConnection);
+                initQuerySplit();
 
                 activateTab('query');
             } catch (error) {
