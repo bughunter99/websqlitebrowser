@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -27,6 +28,8 @@ class BrowserApiTests(TestCase):
 
 		payload = response.json()
 		self.assertEqual(payload['current_path'], '')
+		self.assertIn('current_abs_path', payload)
+		self.assertTrue(os.path.isabs(payload['current_abs_path']))
 		self.assertEqual(payload['parent_path'], '..')
 		self.assertEqual(payload['entries'][0]['name'], 'sample.db')
 		self.assertTrue(payload['entries'][0]['is_sqlite'])

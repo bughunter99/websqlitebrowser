@@ -73,6 +73,7 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 		return JsonResponse(
 			{
 				'current_path': relative_to_root(current_path),
+				'current_abs_path': str(current_path),
 				'parent_path': parent,
 				'entries': entries,
 				'stats': directory_stats(current_path),

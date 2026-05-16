@@ -4,21 +4,28 @@
             activeTab: null,
             loadedTables: new Map(),
             tableTabIds: new Map(),
+            explorerFilter: '',
+            lastTreeData: null,
+            // Grid state for 1st phase features
+            activeCell: null, // { row, col }
+            selectedCells: new Set(), // "row,col" format
+            selectionStart: null, // { row, col }
+            selectionEnd: null, // { row, col }
+            gridDragging: false,
+            gridLastClickedCell: null,
         };
 
         const explorerList = document.getElementById('explorer-list');
         const panelStack = document.querySelector('.panel-stack');
         const explorerStatusbar = document.getElementById('explorer-statusbar');
-        const currentPath = document.getElementById('current-path');
+        const currentPath = document.getElementById('workspace-root');
         const tabs = document.getElementById('tabs');
         const workspaceFrame = document.querySelector('.workspace-frame');
         const welcomeTab = document.getElementById('welcome-tab');
         const chatStatus = document.getElementById('chat-status');
         const chatResponse = document.getElementById('chat-response');
-        const workspaceRoot = document.getElementById('workspace-root');
         const workspaceFile = document.getElementById('workspace-file');
         const workspaceReload = document.getElementById('workspace-reload');
-        const workspaceFocusQuery = document.getElementById('workspace-focus-query');
         const outputBody = document.getElementById('output-body');
 
         const railButtons = Array.from(document.querySelectorAll('.rail-button'));
@@ -88,6 +95,32 @@
                 .replaceAll("'", '&#39;');
         }
 
+        function escapeRegExp(value) {
+            return String(value ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function highlightExplorerName(text, query) {
+            const source = String(text ?? '');
+            const q = String(query ?? '').trim();
+            if (!q) {
+                return escapeHtml(source);
+            }
+
+            const pattern = new RegExp(escapeRegExp(q), 'ig');
+            let lastIndex = 0;
+            let html = '';
+
+            source.replace(pattern, (match, offset) => {
+                html += escapeHtml(source.slice(lastIndex, offset));
+                html += `<mark class="explorer-match">${escapeHtml(match)}</mark>`;
+                lastIndex = offset + match.length;
+                return match;
+            });
+
+            html += escapeHtml(source.slice(lastIndex));
+            return html;
+        }
+
         const SQL_KEYWORD_PATTERN = /\b(select|from|where|group|order|by|limit|join|left|right|inner|outer|on|as|and|or|not|null|is|in|exists|like|between|having|union|all|distinct|insert|into|values|update|set|delete|create|table|view|index|drop|alter|pragma|with|case|when|then|else|end|count|sum|min|max|avg)\b/gi;
 
         function renderSqlHighlight(textarea, highlight) {
@@ -133,6 +166,7 @@
 
         function renderExplorer(treeData) {
             const entries = Array.isArray(treeData.entries) ? treeData.entries : [];
+            const filterQuery = String(state.explorerFilter || '').trim().toLowerCase();
             const head = `
                 <div class="explorer-head">
                     <div>Name</div>
@@ -152,7 +186,10 @@
                     modified_at: '',
                 });
             }
-            allEntries.push(...entries);
+            const filteredEntries = filterQuery
+                ? entries.filter((entry) => String(entry.name || '').toLowerCase().includes(filterQuery))
+                : entries;
+            allEntries.push(...filteredEntries);
 
             const rows = allEntries.map((entry) => {
                 const sizeText = entry.type === 'file' ? (entry.size_human || '0 B') : '';
@@ -161,7 +198,7 @@
                 return `
                     <div class="explorer-row${selectedClass}${parentClass}" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.type)}" data-is-sqlite="${entry.is_sqlite ? '1' : '0'}">
                         <div class="explorer-name-col">
-                            <span class="explorer-name">${escapeHtml(entry.name)}</span>
+                            <span class="explorer-name">${highlightExplorerName(entry.name, state.explorerFilter)}</span>
                         </div>
                         <div class="explorer-size">${escapeHtml(sizeText)}</div>
                         <div class="explorer-modified">${escapeHtml(entry.modified_at || '')}</div>
@@ -172,16 +209,26 @@
             explorerList.innerHTML = head + rows;
         }
 
+        function setExplorerFilter(value) {
+            state.explorerFilter = String(value ?? '');
+            if (state.lastTreeData) {
+                renderExplorer(state.lastTreeData);
+            }
+        }
+
         async function loadTree(path = '') {
             try {
                 const data = await requestJson(`/api/tree/?path=${encodeURIComponent(path)}`);
                 state.currentPath = data.current_path;
-                currentPath.textContent = `repository${data.current_path ? `/${data.current_path}` : ''}`;
-                workspaceRoot.textContent = currentPath.textContent;
+                state.lastTreeData = data;
+                const displayPath = data.current_abs_path || `repository${data.current_path ? `/${data.current_path}` : ''}`;
+                currentPath.textContent = displayPath;
                 outputLog(`DIR ${currentPath.textContent}`);
                 const parentButton = document.getElementById('go-parent');
-                parentButton.dataset.parentPath = data.parent_path;
-                parentButton.disabled = !data.parent_path;
+                if (parentButton) {
+                    parentButton.dataset.parentPath = data.parent_path;
+                    parentButton.disabled = !data.parent_path;
+                }
 
                 const stats = data.stats || {};
                 const disk = stats.disk || {};
@@ -233,8 +280,8 @@
             const templateColumns = `repeat(${columns.length}, minmax(120px, 1fr))`;
 
             target.innerHTML = `
-                <div class="virtual-grid-wrap">
-                    <div class="virtual-grid-head" style="grid-template-columns:${templateColumns};">
+                <div class="virtual-grid-wrap" tabindex="0" data-template-columns="${templateColumns}">
+                    <div class="virtual-grid-head" style="grid-template-columns:${templateColumns};" data-column-count="${columns.length}">
                         ${columns.map((column) => `<div class="virtual-grid-th">${escapeHtml(column)}</div>`).join('')}
                     </div>
                     <div class="virtual-grid-body" id="virtual-grid-body">
@@ -374,9 +421,7 @@
                         <section class="ddl-section">
                             <div>
                                 <h4>${escapeHtml(table.name)}</h4>
-                                <p class="ddl-subtitle">컬럼 정의와 인덱스, 원본 CREATE SQL을 확인할 수 있습니다.</p>
                             </div>
-                            <pre>${escapeHtml(table.create_sql || 'CREATE SQL 정보가 없습니다.')}</pre>
                             <div>
                                 <strong>Columns</strong>
                                 ${renderMetaTable([
@@ -435,22 +480,262 @@
                 return;
             }
 
-            grid.addEventListener('click', (event) => {
+            const getRowCol = (cell) => {
+                const row = Number(cell.dataset.row);
+                const col = Number(cell.dataset.col);
+                return isNaN(row) || isNaN(col) ? null : { row, col };
+            };
+
+            const getCellKey = (row, col) => `${row},${col}`;
+
+            const getCellByRowCol = (row, col) => {
+                const key = `[data-row="${row}"][data-col="${col}"]`;
+                return grid.querySelector(`.virtual-grid-td${key}, td${key}`);
+            };
+
+            const updateSelectionDisplay = () => {
+                grid.querySelectorAll('td, .virtual-grid-td').forEach((cell) => {
+                    const rc = getRowCol(cell);
+                    if (!rc) {
+                        return;
+                    }
+                    const key = getCellKey(rc.row, rc.col);
+                    cell.classList.toggle('is-selected', state.selectedCells.has(key));
+                    cell.classList.toggle('is-active', state.activeCell && state.activeCell.row === rc.row && state.activeCell.col === rc.col);
+                });
+            };
+
+            const setActiveCell = (row, col) => {
+                state.activeCell = { row, col };
+                updateSelectionDisplay();
+                bringActiveCellIntoView(container);
+            };
+
+            const selectRange = (start, end) => {
+                state.selectedCells.clear();
+                const minRow = Math.min(start.row, end.row);
+                const maxRow = Math.max(start.row, end.row);
+                const minCol = Math.min(start.col, end.col);
+                const maxCol = Math.max(start.col, end.col);
+
+                for (let r = minRow; r <= maxRow; r++) {
+                    for (let c = minCol; c <= maxCol; c++) {
+                        state.selectedCells.add(getCellKey(r, c));
+                    }
+                }
+                updateSelectionDisplay();
+            };
+
+            // Mouse interactions
+            grid.addEventListener('mousedown', (event) => {
+                grid.focus();
                 const cell = event.target.closest('td, .virtual-grid-td');
                 if (!cell) {
                     return;
                 }
 
-                if (event.ctrlKey || event.metaKey) {
-                    cell.classList.toggle('is-selected');
+                const rc = getRowCol(cell);
+                if (!rc) {
                     return;
                 }
 
-                grid.querySelectorAll('td.is-selected, .virtual-grid-td.is-selected').forEach((selectedCell) => {
-                    selectedCell.classList.remove('is-selected');
-                });
-                cell.classList.add('is-selected');
+                event.preventDefault();
+                state.gridDragging = true;
+                state.gridLastClickedCell = rc;
+
+                if (event.shiftKey && state.activeCell) {
+                    selectRange(state.activeCell, rc);
+                } else if (event.ctrlKey || event.metaKey) {
+                    const key = getCellKey(rc.row, rc.col);
+                    state.selectedCells.has(key) ? state.selectedCells.delete(key) : state.selectedCells.add(key);
+                    setActiveCell(rc.row, rc.col);
+                } else {
+                    state.selectedCells.clear();
+                    state.selectedCells.add(getCellKey(rc.row, rc.col));
+                    setActiveCell(rc.row, rc.col);
+                }
             });
+
+            grid.addEventListener('mousemove', (event) => {
+                if (!state.gridDragging || !state.gridLastClickedCell) {
+                    return;
+                }
+
+                const cell = event.target.closest('td, .virtual-grid-td');
+                if (!cell) {
+                    return;
+                }
+
+                const rc = getRowCol(cell);
+                if (!rc) {
+                    return;
+                }
+
+                selectRange(state.gridLastClickedCell, rc);
+            });
+
+            document.addEventListener('mouseup', () => {
+                state.gridDragging = false;
+            });
+
+            // Keyboard interactions
+            grid.addEventListener('keydown', (event) => {
+                if (!state.activeCell) {
+                    return;
+                }
+
+                const handledKeys = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']);
+                if (!handledKeys.has(event.key) && !(event.ctrlKey && event.key.toUpperCase() === 'A')) {
+                    return;
+                }
+
+                const allCells = Array.from(grid.querySelectorAll('td, .virtual-grid-td')).map((cell) => getRowCol(cell)).filter(Boolean);
+                if (!allCells.length) {
+                    return;
+                }
+
+                const maxRow = Math.max(...allCells.map((rc) => rc.row));
+                const maxCol = Math.max(...allCells.map((rc) => rc.col));
+
+                let newRow = state.activeCell.row;
+                let newCol = state.activeCell.col;
+
+                if (event.key === 'ArrowUp') {
+                    newRow = Math.max(0, newRow - 1);
+                } else if (event.key === 'ArrowDown') {
+                    newRow = Math.min(maxRow, newRow + 1);
+                } else if (event.key === 'ArrowLeft') {
+                    newCol = Math.max(0, newCol - 1);
+                } else if (event.key === 'ArrowRight') {
+                    newCol = Math.min(maxCol, newCol + 1);
+                } else if (event.key === 'Home') {
+                    newCol = 0;
+                } else if (event.key === 'End') {
+                    newCol = maxCol;
+                } else if (event.key === 'PageUp') {
+                    newRow = Math.max(0, newRow - 10);
+                } else if (event.key === 'PageDown') {
+                    newRow = Math.min(maxRow, newRow + 10);
+                } else if (event.ctrlKey && event.key.toUpperCase() === 'A') {
+                    event.preventDefault();
+                    state.selectedCells.clear();
+                    allCells.forEach((rc) => {
+                        state.selectedCells.add(getCellKey(rc.row, rc.col));
+                    });
+                    updateSelectionDisplay();
+                    return;
+                }
+
+                if (event.shiftKey && !event.ctrlKey && !event.metaKey) {
+                    selectRange(state.activeCell, { row: newRow, col: newCol });
+                } else {
+                    state.selectedCells.clear();
+                    state.selectedCells.add(getCellKey(newRow, newCol));
+                    setActiveCell(newRow, newCol);
+                }
+
+                event.preventDefault();
+            });
+
+            // Auto-activate first cell if no active cell set
+            if (!state.activeCell) {
+                const firstCell = grid.querySelector('td, .virtual-grid-td');
+                if (firstCell) {
+                    const rc = getRowCol(firstCell);
+                    if (rc) {
+                        setActiveCell(rc.row, rc.col);
+                        return;
+                    }
+                }
+            }
+
+
+               // Add column resize support
+               const head = container.querySelector('.virtual-grid-head');
+               if (head) {
+                   const resizeResizer = (startX, colIndex, headers) => {
+                       let isResizing = false;
+                       let initialX = 0;
+                       let initialWidth = 0;
+
+                       const onMouseMove = (e) => {
+                           if (!isResizing) return;
+                           const deltaX = e.clientX - initialX;
+                           const newWidth = Math.max(40, initialWidth + deltaX);
+                       
+                           // Update grid template columns
+                           const wrap = container.querySelector('.virtual-grid-wrap');
+                           if (wrap) {
+                               const rect = wrap.getBoundingClientRect();
+                               const totalWidth = rect.width;
+                               const percentChange = ((newWidth - initialWidth) / totalWidth) * 100;
+                           
+                               // Recalculate all column widths
+                               const head = container.querySelector('.virtual-grid-head');
+                               const rows = container.querySelectorAll('.virtual-grid-tr');
+                               const newTemplate = Array(headers.length).fill(0).map((_, i) => {
+                                   return i === colIndex ? `${newWidth}px` : 'minmax(120px, 1fr)';
+                               }).join(' ');
+                           
+                               head.style.gridTemplateColumns = newTemplate;
+                               rows.forEach(row => row.style.gridTemplateColumns = newTemplate);
+                           }
+                       };
+
+                       const onMouseUp = () => {
+                           isResizing = false;
+                           document.removeEventListener('mousemove', onMouseMove);
+                           document.removeEventListener('mouseup', onMouseUp);
+                       };
+
+                       return (e) => {
+                           if (e.button !== 0) return;
+                           isResizing = true;
+                           initialX = e.clientX;
+                           initialWidth = headers[colIndex].getBoundingClientRect().width;
+                           document.addEventListener('mousemove', onMouseMove);
+                           document.addEventListener('mouseup', onMouseUp);
+                       };
+                   };
+
+                   const headers = Array.from(head.querySelectorAll('.virtual-grid-th'));
+                   headers.forEach((header, idx) => {
+                       header.addEventListener('mousedown', (e) => {
+                           // Only handle resize if near the right edge
+                           const rect = header.getBoundingClientRect();
+                           const distFromRight = rect.right - e.clientX;
+                           if (distFromRight <= 6) {
+                               e.preventDefault();
+                               resizeResizer(e.clientX, idx, headers)(e);
+                           }
+                       });
+                   });
+               }
+
+            updateSelectionDisplay();
+        }
+
+        function bringActiveCellIntoView(container) {
+            if (!state.activeCell) {
+                return;
+            }
+
+            const cell = container.querySelector(`[data-row="${state.activeCell.row}"][data-col="${state.activeCell.col}"]`);
+            if (!cell) {
+                return;
+            }
+
+            const body = container.querySelector('.virtual-grid-body');
+            if (body) {
+                const cellRect = cell.getBoundingClientRect();
+                const bodyRect = body.getBoundingClientRect();
+
+                if (cellRect.top < bodyRect.top) {
+                    body.scrollTop -= bodyRect.top - cellRect.top;
+                } else if (cellRect.bottom > bodyRect.bottom) {
+                    body.scrollTop += cellRect.bottom - bodyRect.bottom;
+                }
+            }
         }
 
         function copySelectedCells() {
@@ -544,14 +829,10 @@
             const splitterHeight = 8;
             const minTop = 74;
             const minBottom = 84;
-            let ratio = 44;
 
-            const applyRatio = () => {
-                const safe = Math.max(22, Math.min(78, ratio));
-                layout.style.setProperty('--query-top-ratio', `${safe}%`);
+            const applyTopPx = (nextTop) => {
+                layout.style.gridTemplateRows = `${nextTop}px ${splitterHeight}px minmax(${minBottom}px, 1fr)`;
             };
-
-            applyRatio();
 
             const onPointerMove = (event) => {
                 if (!dragging) {
@@ -568,10 +849,7 @@
                 if (nextTop > maxTop) {
                     nextTop = maxTop;
                 }
-
-                const movableHeight = Math.max(1, rect.height - splitterHeight);
-                ratio = (nextTop / movableHeight) * 100;
-                applyRatio();
+                applyTopPx(nextTop);
             };
 
             const stopDragging = () => {
@@ -602,12 +880,7 @@
             window.addEventListener('pointerup', stopDragging);
             window.addEventListener('pointercancel', stopDragging);
             splitter.addEventListener('dblclick', () => {
-                ratio = 44;
-                applyRatio();
-            });
-
-            window.addEventListener('resize', () => {
-                applyRatio();
+                layout.style.gridTemplateRows = '';
             });
         }
 

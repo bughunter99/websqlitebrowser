@@ -1,4 +1,5 @@
         :root {
+            --ui-scale: 1;
             --bg: #c0c0c0;
             --surface: #d4d0c8;
             --surface-strong: #ffffff;
@@ -32,17 +33,17 @@
             margin: 0;
             min-height: 100%;
             font-family: "Tahoma", "Noto Sans KR", "Segoe UI", sans-serif;
-            font-size: 12px;
+            font-size: calc(12px * var(--ui-scale));
             color: var(--text);
             background: var(--bg);
         }
 
         .app-shell {
             display: grid;
-            grid-template-columns: clamp(240px, 23vw, 304px) minmax(0, 1fr);
+            grid-template-columns: clamp(240px, 23vw, 304px) 8px minmax(0, 1fr);
             height: 100vh;
             height: 100dvh;
-            gap: 8px;
+            gap: 0;
             padding: 8px;
             overflow: hidden;
         }
@@ -64,6 +65,40 @@
             flex-direction: column;
             overflow: hidden;
             min-height: 0;
+        }
+
+        .sidebar-resizer {
+            cursor: col-resize;
+            position: relative;
+            background: linear-gradient(90deg, #dfdcd3, #c9c5bc);
+            border-left: 1px solid var(--line);
+            border-right: 1px solid var(--line);
+            transition: background 120ms ease, box-shadow 120ms ease;
+            margin: 0 6px;
+        }
+
+        .sidebar-resizer::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 2px;
+            height: 60px;
+            transform: translate(-50%, -50%);
+            border-left: 1px solid #ffffff;
+            border-right: 1px solid #5f5b56;
+            opacity: 0.75;
+            pointer-events: none;
+        }
+
+        .sidebar-resizer:hover {
+            background: linear-gradient(90deg, #6f90c6, #355a9d);
+            box-shadow: inset 0 0 0 1px #0a246a;
+        }
+
+        .sidebar-resizer.is-dragging {
+            background: linear-gradient(90deg, #5f82bf, #244988);
+            box-shadow: inset 0 0 0 1px #001a55;
         }
 
         .activity-rail {
@@ -154,6 +189,27 @@
             gap: 2px;
             min-height: 0;
         }
+
+        .explorer-topline {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 4px;
+            align-items: center;
+            min-height: 18px;
+        }
+
+        #explorer-filter {
+            min-height: 18px;
+            padding: 2px 6px;
+            font-size: 12px;
+        }
+
+        .explorer-match {
+            background: #fff2a6;
+            color: #111111;
+            padding: 0 1px;
+            border-radius: 2px;
+        }
         
         .chat-panel {
             display: grid;
@@ -238,10 +294,11 @@
             border: 1px solid var(--line);
             border-radius: 4px;
             background: var(--surface-strong);
-            color: var(--accent-ink);
+            color: var(--text);
             font-size: 0.62rem;
             margin-bottom: 0;
             line-height: 1.1;
+            box-shadow: inset 1px 1px 0 #ffffff;
         }
 
         .explorer-list {
@@ -270,7 +327,7 @@
             background: linear-gradient(180deg, #f6f9fd, #e2e9f3);
             border-bottom: 1px solid var(--line);
             color: var(--accent-ink);
-            font-weight: 700;
+            font-weight: 400;
             font-size: 0.58rem;
             min-height: 14px;
             line-height: 1;
@@ -285,7 +342,7 @@
 
         .explorer-row.parent-row {
             background: #f2f6fc;
-            font-weight: 700;
+            font-weight: 400;
         }
 
         .explorer-row:hover {
@@ -305,7 +362,7 @@
         }
 
         .explorer-name {
-            font-weight: 600;
+            font-weight: 400;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -361,7 +418,8 @@
             border-radius: 2px;
             padding: 4px 7px;
             cursor: pointer;
-            font: inherit;
+                font: inherit;
+                font-size: 12px;
             transition: border-color 140ms ease, background 140ms ease;
         }
 
@@ -420,7 +478,7 @@
             flex: 0 0 auto;
             min-height: 21px;
             padding: 1px 6px;
-            font-size: 0.6rem;
+                font-size: 12px;
             line-height: 1;
         }
 
@@ -436,15 +494,36 @@
             flex: 1;
             min-height: 0;
             display: none;
+            width: 100%;
             background: var(--surface);
             border: 1px solid var(--line-strong);
             border-radius: 4px;
             padding: 4px;
-            overflow: auto;
+            overflow: hidden;
         }
 
         .tab-content.active {
-            display: block;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .tab-content > .query-layout,
+        .tab-content > .ddl-grid,
+        .tab-content > .query-multi-results,
+        .tab-content > .table-wrap,
+        .tab-content > .virtual-grid-wrap {
+            flex: 1;
+            min-height: 0;
+            width: 100%;
+        }
+
+        .tab-content > div[id^="table-result-"] {
+            flex: 1;
+            min-height: 0;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
 
         .query-layout {
@@ -527,6 +606,8 @@
         #sql-editor {
             position: absolute;
             inset: 0;
+            width: 100%;
+            height: 100%;
             margin: 0;
             padding: 4px 6px;
             border: 0;
@@ -585,6 +666,12 @@
             gap: 2px;
         }
 
+        .query-multi-panels {
+            min-height: 0;
+            position: relative;
+            flex: 1;
+        }
+
         .query-multi-tabs {
             display: flex;
             gap: 2px;
@@ -605,7 +692,7 @@
             min-height: 20px;
             padding: 0 7px;
             font: inherit;
-            font-size: 0.6rem;
+                font-size: 12px;
             cursor: pointer;
         }
 
@@ -616,11 +703,6 @@
             border-left-color: #7e9fd6;
             border-right-color: #001a55;
             border-bottom-color: #001a55;
-        }
-
-        .query-multi-panels {
-            min-height: 0;
-            position: relative;
         }
 
         .query-multi-panel {
@@ -683,7 +765,7 @@
         .workspace-toolbar button {
             min-height: 20px;
             padding: 1px 6px;
-            font-size: 0.6rem;
+              font-size: 12px;
         }
 
         #run-query-button {
@@ -746,7 +828,7 @@
         .output-actions .button-secondary {
             min-height: 18px;
             padding: 0 6px;
-            font-size: 0.58rem;
+              font-size: 12px;
         }
 
         #output-autohide[aria-pressed="true"] {
@@ -805,6 +887,9 @@
         }
 
         .table-wrap {
+            flex: 1;
+            min-height: 0;
+            height: 100%;
             overflow: auto;
             border: 1px solid var(--line-strong);
             border-radius: 4px;
@@ -821,6 +906,11 @@
             background: var(--accent-soft);
         }
 
+        .result-grid td.is-active {
+            border: 2px solid var(--accent);
+            box-shadow: inset 0 0 0 1px var(--accent);
+        }
+
         .virtual-grid-wrap {
             display: grid;
             grid-template-rows: auto minmax(0, 1fr);
@@ -830,15 +920,23 @@
             border-radius: 4px;
             background: var(--surface-strong);
             overflow: hidden;
+            outline: none;
+        }
+
+        .virtual-grid-wrap:focus {
+            outline: 1px solid var(--accent);
+            outline-offset: -1px;
         }
 
         .virtual-grid-head {
             display: grid;
             min-height: 20px;
-            background: linear-gradient(180deg, #f5f8fc, #e2e9f3);
-            border-bottom: 1px solid #d6deea;
+            background: linear-gradient(180deg, #d4d0c8, #c0bbb1);
+            border-bottom: 1px solid #8a8884;
             font-size: 0.62rem;
             font-weight: 700;
+            color: #000000;
+            box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.5);
         }
 
         .virtual-grid-th {
@@ -846,13 +944,14 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            color: #000000;
         }
 
         .virtual-grid-body {
             position: relative;
             min-height: 0;
             overflow: auto;
-            background: var(--surface-strong);
+            background: #ffffff;
         }
 
         .virtual-grid-spacer {
@@ -870,8 +969,9 @@
 
         .virtual-grid-tr {
             display: grid;
-            min-height: 22px;
-            border-bottom: 1px solid #d6deea;
+               min-height: 0;
+               height: 22px;
+            border-bottom: 1px solid #e0e0e0;
             align-items: stretch;
         }
 
@@ -883,10 +983,20 @@
             text-overflow: ellipsis;
             cursor: default;
             user-select: none;
+            color: #000000;
+               height: 22px;
+               display: flex;
+               align-items: center;
+               line-height: 1;
         }
 
         .virtual-grid-td.is-selected {
             background: var(--accent-soft);
+        }
+
+        .virtual-grid-td.is-active {
+            border: 2px solid var(--accent);
+            box-shadow: inset 0 0 0 1px var(--accent);
         }
 
         table {
@@ -956,8 +1066,14 @@
         }
 
         .ddl-grid {
+            flex: 1;
+            min-height: 0;
+            height: 100%;
             display: grid;
             gap: 14px;
+            overflow: auto;
+            align-content: start;
+            padding-right: 2px;
         }
 
         .ddl-grid pre {
@@ -1005,9 +1121,15 @@
             .app-shell {
                 grid-template-columns: 1fr;
                 height: auto;
-                min-height: 100dvh;
+                   min-height: 20px;
+                   height: 20px;
                 overflow: visible;
             }
+
+            .sidebar-resizer {
+                display: none;
+            }
+                   user-select: none;
 
             .activity-rail {
                 border-top: 1px solid var(--line);
@@ -1016,6 +1138,21 @@
             .rail-button {
                 min-width: 0;
             }
+                   display: flex;
+                   align-items: center;
+                   position: relative;
+                   line-height: 1;
+               }
+
+               .virtual-grid-th::after {
+                   content: '';
+                   position: absolute;
+                   right: 0;
+                   top: 2px;
+                   bottom: 2px;
+                   width: 1px;
+                   background: #8a8884;
+                   cursor: col-resize;
 
             .query-layout {
                 grid-template-rows: auto auto;

@@ -5,7 +5,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>websqlitebrowser</title>
-    <link rel="stylesheet" href="{% static 'browser/app.css' %}?v=20260516-5">
+    <script>
+        (function () {
+            const userAgent = navigator.userAgent || '';
+            const isMobile = /Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)
+                || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches && window.innerWidth < 900);
+            document.documentElement.dataset.device = isMobile ? 'mobile' : 'desktop';
+            document.documentElement.style.setProperty('--ui-scale', isMobile ? '1' : '1.2');
+        }());
+    </script>
+    <link rel="stylesheet" href="{% static 'browser/app.css' %}?v=20260516-20">
 </head>
 <body>
     <div class="app-shell">
@@ -14,12 +23,12 @@
                 <div class="panel-stack">
                     <section class="panel panel-explorer active" data-panel="explorer">
                         <h3 class="panel-title">Data Explorer</h3>
-                        <div class="path-chip" id="current-path">repository</div>
-                        <div class="button-row">
-                            <button class="button-secondary" id="go-parent">상위 폴더</button>
-                            <button class="button-secondary" id="reload-tree">새로고침</button>
+                        <div class="explorer-topline">
+                            <div class="path-chip" id="workspace-root">repository</div>
+                            <button class="button-secondary" id="workspace-reload">Reload</button>
                         </div>
-                        <div class="explorer-list" id="explorer-list"></div>
+                        <input id="explorer-filter" type="text" placeholder="Filter (이름 포함 검색)">
+                        <div class="explorer-list" id="explorer-list" tabindex="0" aria-label="Data Explorer list"></div>
                         <div class="explorer-statusbar" id="explorer-statusbar">folders 0 | files 0 | size 0 B | disk 0%</div>
                     </section>
 
@@ -73,16 +82,13 @@
             </div>
         </aside>
 
+        <div class="sidebar-resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical" title="드래그해서 좌우 크기 조정"></div>
+
         <main class="main-panel">
             <section class="content-area">
                 <div class="workspace-topbar">
                     <div class="workspace-breadcrumbs">
-                        <span class="workspace-badge" id="workspace-root">repository</span>
                         <span class="workspace-badge" id="workspace-file">none</span>
-                    </div>
-                    <div class="workspace-toolbar">
-                        <button class="button-secondary" id="workspace-reload">Reload</button>
-                        <button class="button-secondary" id="workspace-focus-query">Query</button>
                     </div>
                 </div>
 
@@ -110,7 +116,7 @@
         </main>
     </div>
 
-    <script src="{% static 'browser/app.core.js' %}?v=20260516-6"></script>
-    <script src="{% static 'browser/app.events.js' %}?v=20260516-2"></script>
+    <script src="{% static 'browser/app.core.js' %}?v=20260516-14"></script>
+    <script src="{% static 'browser/app.events.js' %}?v=20260516-10"></script>
 </body>
 </html>

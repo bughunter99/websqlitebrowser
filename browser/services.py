@@ -25,8 +25,9 @@ def repository_root() -> Path:
 
 
 def explorer_top_root() -> Path:
-    # Allow browsing one level above repository root for "../" navigation on first screen.
-    return repository_root().parent
+    # Allow browsing up to filesystem root (Windows drive root or POSIX '/').
+    root = repository_root()
+    return Path(root.anchor).resolve()
 
 
 def resolve_repo_path(relative_path: str = '') -> Path:
@@ -34,7 +35,7 @@ def resolve_repo_path(relative_path: str = '') -> Path:
     top_root = explorer_top_root()
     candidate = (repo_root / relative_path).resolve()
     if candidate != top_root and top_root not in candidate.parents:
-        raise SuspiciousOperation('Path is outside repository root.')
+        raise SuspiciousOperation('Path is outside allowed root.')
     return candidate
 
 
