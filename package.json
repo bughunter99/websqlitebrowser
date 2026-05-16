@@ -1,0 +1,16 @@
+{
+  "name": "websqlitebrowser",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
+    "test:e2e": "node ./node_modules/@playwright/test/cli.js test",
+    "test:e2e:smoke": "node ./node_modules/@playwright/test/cli.js test tests/e2e/smoke.spec.js",
+    "test:e2e:regression": "node ./node_modules/@playwright/test/cli.js test tests/e2e/regression.spec.js",
+    "test:e2e:headed": "node ./node_modules/@playwright/test/cli.js test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2",
+    "typescript": "^5.9.2"
+  }
+}

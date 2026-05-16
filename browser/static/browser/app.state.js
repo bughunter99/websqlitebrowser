@@ -12,6 +12,7 @@ const state = {
     tableTabIds: new Map(),
     explorerFilter: '',
     lastTreeData: null,
+    selectedExplorerPath: '',
     // Grid state
     activeCell: null, // { row, col }
     selectedCells: new Set(), // "row,col" format
@@ -50,6 +51,5 @@ const domElements = {
 };
 
 // 상태 관련 변수들
-let selectedExplorerPath = '';
 const gridRenderState = new WeakMap();
 let gridContextMenu = null;

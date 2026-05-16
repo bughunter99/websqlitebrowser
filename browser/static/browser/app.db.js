@@ -70,7 +70,7 @@ function renderDdlContent(tables) {
 
 async function openDatabase(path) {
     try {
-        const data = await requestJson(`/api/database/?path=${encodeURIComponent(path)}`);
+        const data = /** @type {any} */ (await requestJson(`/api/database/?path=${encodeURIComponent(path)}`));
         state.currentDatabase = data.database;
         state.loadedTables.clear();
         state.tableTabIds.clear();
@@ -158,7 +158,7 @@ async function loadTable(tableName, tabId = state.tableTabIds.get(tableName)) {
     target.textContent = '로딩 중...';
 
     try {
-        const data = await requestJson(`/api/table/?path=${encodeURIComponent(state.currentDatabase.path)}&table=${encodeURIComponent(tableName)}&all=1`);
+        const data = /** @type {any} */ (await requestJson(`/api/table/?path=${encodeURIComponent(state.currentDatabase.path)}&table=${encodeURIComponent(tableName)}&all=1`));
         target.className = '';
         renderResultContent(target, data.columns, data.rows);
         attachGridInteractions(target);

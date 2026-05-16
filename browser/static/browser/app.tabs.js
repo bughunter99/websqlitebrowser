@@ -10,7 +10,7 @@ function ensureTab(id, title, contentHtml) {
     if (!tabButton) {
         tabButton = document.createElement('button');
         tabButton.className = 'tab-button';
-        tabButton.dataset.tab = id;
+        /** @type {HTMLElement} */ (tabButton).dataset.tab = id;
         tabButton.textContent = title;
         tabButton.addEventListener('click', () => activateTab(id));
         domElements.tabs.appendChild(tabButton);
@@ -33,7 +33,8 @@ function activateTab(id) {
     domElements.welcomeTab.classList.remove('active');
 
     document.querySelectorAll('.tab-button').forEach((button) => {
-        button.classList.toggle('active', button.dataset.tab === id);
+        const tab = /** @type {HTMLElement} */ (button);
+        tab.classList.toggle('active', tab.dataset.tab === id);
     });
     document.querySelectorAll('.tab-content').forEach((content) => {
         content.classList.toggle('active', content.id === `tab-${id}`);

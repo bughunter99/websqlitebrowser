@@ -35,7 +35,7 @@ function renderExplorer(treeData) {
 
     const rows = allEntries.map((entry) => {
         const sizeText = entry.type === 'file' ? (entry.size_human || '0 B') : '';
-        const selectedClass = selectedExplorerPath && selectedExplorerPath === entry.path ? ' selected' : '';
+        const selectedClass = state.selectedExplorerPath && state.selectedExplorerPath === entry.path ? ' selected' : '';
         const parentClass = entry.type === 'parent' ? ' parent-row' : '';
         return `
             <div class="explorer-row${selectedClass}${parentClass}" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.type)}" data-is-sqlite="${entry.is_sqlite ? '1' : '0'}">
@@ -66,13 +66,13 @@ function setExplorerFilter(value) {
  */
 async function loadTree(path = '') {
     try {
-        const data = await requestJson(`/api/tree/?path=${encodeURIComponent(path)}`);
+        const data = /** @type {any} */ (await requestJson(`/api/tree/?path=${encodeURIComponent(path)}`));
         state.currentPath = data.current_path;
         state.lastTreeData = data;
         const displayPath = data.current_abs_path || `repository${data.current_path ? `/${data.current_path}` : ''}`;
         domElements.currentPath.textContent = displayPath;
         outputLog(`DIR ${domElements.currentPath.textContent}`);
-        const parentButton = document.getElementById('go-parent');
+        const parentButton = /** @type {HTMLButtonElement | null} */ (document.getElementById('go-parent'));
         if (parentButton) {
             parentButton.dataset.parentPath = data.parent_path;
             parentButton.disabled = !data.parent_path;

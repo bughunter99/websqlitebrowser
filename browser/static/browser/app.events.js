@@ -1,31 +1,35 @@
         document.querySelectorAll('.nav-button').forEach((button) => {
-            button.addEventListener('click', () => setPanel(button.dataset.target));
+            const navButton = /** @type {HTMLElement} */ (button);
+            navButton.addEventListener('click', () => setPanel(navButton.dataset.target || 'explorer'));
         });
 
         const explorerFilter = document.getElementById('explorer-filter');
         if (explorerFilter) {
             explorerFilter.addEventListener('input', (event) => {
-                setExplorerFilter(event.target.value || '');
+                const input = /** @type {HTMLInputElement} */ (event.target);
+                setExplorerFilter(input.value || '');
             });
         }
 
         domElements.explorerList.addEventListener('click', (event) => {
-            const row = event.target.closest('.explorer-row');
+            const target = /** @type {Element | null} */ (event.target instanceof Element ? event.target : null);
+            const row = /** @type {HTMLElement | null} */ (target ? target.closest('.explorer-row') : null);
             if (!row) {
                 return;
             }
             domElements.explorerList.focus();
-            selectedExplorerPath = row.dataset.path || '';
+            state.selectedExplorerPath = row.dataset.path || '';
             domElements.explorerList.querySelectorAll('.explorer-row').forEach((item) => item.classList.remove('selected'));
             row.classList.add('selected');
 
             if (row.dataset.type === 'file' && row.dataset.isSqlite === '1') {
-                openDatabase(selectedExplorerPath);
+                openDatabase(state.selectedExplorerPath);
             }
         });
 
         domElements.explorerList.addEventListener('dblclick', (event) => {
-            const row = event.target.closest('.explorer-row');
+            const target = /** @type {Element | null} */ (event.target instanceof Element ? event.target : null);
+            const row = /** @type {HTMLElement | null} */ (target ? target.closest('.explorer-row') : null);
             if (!row) {
                 return;
             }
@@ -74,7 +78,7 @@
                 nextIndex = Math.min(rows.length - 1, nextIndex + 1);
             }
 
-            const nextRow = rows[nextIndex];
+            const nextRow = /** @type {HTMLElement | undefined} */ (rows[nextIndex]);
             if (!nextRow) {
                 return;
             }
@@ -82,10 +86,10 @@
             domElements.explorerList.querySelectorAll('.explorer-row').forEach((row) => row.classList.remove('selected'));
             nextRow.classList.add('selected');
             nextRow.scrollIntoView({ block: 'nearest' });
-            selectedExplorerPath = nextRow.dataset.path || '';
+            state.selectedExplorerPath = nextRow.dataset.path || '';
 
             if (nextRow.dataset.type === 'file' && nextRow.dataset.isSqlite === '1') {
-                openDatabase(selectedExplorerPath);
+                openDatabase(state.selectedExplorerPath);
             }
         });
 
@@ -99,9 +103,9 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        endpoint: document.getElementById('llm-endpoint').value,
-                        token: document.getElementById('llm-token').value,
-                        model: document.getElementById('llm-model').value,
+                        endpoint: /** @type {HTMLInputElement} */ (document.getElementById('llm-endpoint')).value,
+                        token: /** @type {HTMLInputElement} */ (document.getElementById('llm-token')).value,
+                        model: /** @type {HTMLInputElement} */ (document.getElementById('llm-model')).value,
                     }),
                 });
                 status.textContent = '서버에 설정을 저장했습니다.';
@@ -112,7 +116,7 @@
         });
 
         async function sendChatMessage() {
-            const chatInput = document.getElementById('chat-input');
+            const chatInput = /** @type {HTMLTextAreaElement} */ (document.getElementById('chat-input'));
             const message = chatInput.value.trim();
             domElements.chatResponse.innerHTML = '';
 
@@ -125,14 +129,14 @@
             }
 
             try {
-                const data = await requestJson('/api/chat/', {
+                const data = /** @type {any} */ (await requestJson('/api/chat/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         path: state.currentDatabase.path,
                         message,
                     }),
-                });
+                }));
 
                 domElements.chatResponse.innerHTML = renderChatResponse(data);
                 if (data.query_result && !data.query_result.error) {
@@ -156,7 +160,8 @@
         });
 
         domElements.railButtons.forEach((button) => {
-            button.addEventListener('click', () => setPanel(button.dataset.target));
+            const railButton = /** @type {HTMLElement} */ (button);
+            railButton.addEventListener('click', () => setPanel(railButton.dataset.target || 'explorer'));
         });
 
         document.getElementById('output-clear').addEventListener('click', () => {
@@ -198,7 +203,7 @@
             });
         }
 
-        const appShell = document.querySelector('.app-shell');
+        const appShell = /** @type {HTMLElement | null} */ (document.querySelector('.app-shell'));
         const sidebarResizer = document.getElementById('sidebar-resizer');
         const SIDEBAR_WIDTH_STORAGE_KEY = 'websqlitebrowser.sidebar.width';
         if (appShell && sidebarResizer) {
@@ -280,8 +285,8 @@
             });
         }
 
-        if (workspaceReload) {
-            workspaceReload.addEventListener('click', () => {
+        if (domElements.workspaceReload) {
+            domElements.workspaceReload.addEventListener('click', () => {
                 outputLog('NAV reload');
                 loadTree(state.currentPath);
             });
@@ -299,8 +304,9 @@
             }
 
             if (editable.matches('textarea, input')) {
-                const start = Number(editable.selectionStart ?? 0);
-                const end = Number(editable.selectionEnd ?? 0);
+                const input = /** @type {HTMLInputElement | HTMLTextAreaElement} */ (editable);
+                const start = Number(input.selectionStart ?? 0);
+                const end = Number(input.selectionEnd ?? 0);
                 return end > start;
             }
 

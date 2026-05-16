@@ -18,6 +18,7 @@ DEFAULT_SAMPLE_LIMIT = 3
 SETTINGS_FILENAME = '.websqlitebrowser-settings.json'
 ORACLE_ROWNUM_PATTERN = re.compile(r'(?is)\s+(where|and)\s+rownum\s*(<|<=)\s*(\d+)\s*$')
 FENCED_SQL_PATTERN = re.compile(r'```(?:sql)?\s*(.*?)```', re.IGNORECASE | re.DOTALL)
+FENCED_JSON_PATTERN = re.compile(r'```(?:json)?\s*(\{.*?\})\s*```', re.IGNORECASE | re.DOTALL)
 
 
 def repository_root() -> Path:
@@ -367,6 +368,38 @@ def extract_sql_from_text(text: str) -> str:
     return ''
 
 
+def parse_llm_content(content: str) -> tuple[str, str]:
+    cleaned = content.strip()
+    if not cleaned:
+        return '', ''
+
+    # 1) Try fenced JSON first.
+    fenced_match = FENCED_JSON_PATTERN.search(cleaned)
+    if fenced_match:
+        try:
+            payload = json.loads(fenced_match.group(1))
+            answer = str(payload.get('answer', '')).strip()
+            sql = str(payload.get('sql', '')).strip()
+            return answer, sql
+        except json.JSONDecodeError:
+            pass
+
+    # 2) Try bare JSON object.
+    json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
+    if json_match:
+        try:
+            payload = json.loads(json_match.group(0))
+            answer = str(payload.get('answer', '')).strip()
+            sql = str(payload.get('sql', '')).strip()
+            if answer or sql:
+                return answer, sql
+        except json.JSONDecodeError:
+            pass
+
+    # 3) Fallback: treat content as answer and extract SQL heuristically.
+    return cleaned, extract_sql_from_text(cleaned)
+
+
 def call_llm(
     settings_data: dict[str, str],
     question: str,
@@ -383,11 +416,12 @@ def call_llm(
 
     system_prompt = (
         'You are a Korean assistant for SQLite database exploration. '
-        'Answer using the provided schema and sample rows. '
+        'Answer using only the provided schema and sample rows. '
         'If you are unsure, say so clearly. '
-        'Prefer returning JSON with keys answer and sql. '
-        'If you include SQL, keep it read-only and valid for SQLite. '
-        'When relevant, include a short SQL query in a fenced code block.'
+        'Return exactly one JSON object with keys "answer" and "sql". '
+        'The "answer" value must be Korean plain text. '
+        'The "sql" value must be either an empty string or a read-only SQLite SQL statement. '
+        'Do not include markdown, code fences, or additional keys.'
     )
     user_prompt = json.dumps(
         {
@@ -445,7 +479,10 @@ def call_llm(
     if not message:
         raise SuspiciousOperation('LLM response did not include a message.')
 
-    suggested_sql = extract_sql_from_text(message)
+    answer, suggested_sql = parse_llm_content(message)
+    if not answer:
+        answer = message
+
     query_result = None
     if suggested_sql and database_path is not None:
         try:
@@ -454,7 +491,7 @@ def call_llm(
             query_result = {'error': str(error)}
 
     return {
-        'answer': message,
+        'answer': answer,
         'suggested_sql': suggested_sql,
         'query_result': query_result,
         'provider': 'openai-compatible',

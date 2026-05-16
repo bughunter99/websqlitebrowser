@@ -3,6 +3,14 @@
  * SQL 실행 및 결과 렌더링
  */
 
+/** @typedef {{ [key: string]: unknown }} QueryRow */
+/** @typedef {{ columns?: string[], rows?: QueryRow[], row_count?: number, truncated?: boolean, statement_index?: number }} QueryResult */
+/** @typedef {{ columns?: string[], rows?: QueryRow[], row_count?: number, truncated?: boolean, results?: QueryResult[] }} QueryResponse */
+
+/**
+ * @param {HTMLElement} target
+ * @param {QueryResult[]} results
+ */
 function renderMultiQueryResults(target, results) {
     if (!Array.isArray(results) || !results.length) {
         target.className = 'status-box';
@@ -26,10 +34,12 @@ function renderMultiQueryResults(target, results) {
 
     const activate = (index) => {
         tabsHost.querySelectorAll('.query-multi-tab').forEach((button) => {
-            button.classList.toggle('active', Number(button.dataset.index) === index);
+            const el = /** @type {HTMLElement} */ (button);
+            button.classList.toggle('active', Number(el.dataset.index) === index);
         });
         panelsHost.querySelectorAll('.query-multi-panel').forEach((panel) => {
-            panel.classList.toggle('active', Number(panel.dataset.index) === index);
+            const el = /** @type {HTMLElement} */ (panel);
+            panel.classList.toggle('active', Number(el.dataset.index) === index);
         });
     };
 
@@ -73,7 +83,14 @@ async function runQuery() {
         }
     }
 
-    const sql = document.getElementById('sql-editor').value;
+    const sqlEditor = document.getElementById('sql-editor');
+    if (!(sqlEditor instanceof HTMLTextAreaElement)) {
+        target.className = 'status-box error';
+        target.textContent = 'SQL 에디터를 찾을 수 없습니다.';
+        return;
+    }
+
+    const sql = sqlEditor.value;
     const startedAt = new Date();
     const startedAtText = formatDateTime(startedAt);
     setStatus('Running query…', state.currentDatabase.name);
@@ -83,11 +100,11 @@ async function runQuery() {
     outputLog(`QUERY SQL ${sql.replace(/\s+/g, ' ').trim().slice(0, 180)}`);
 
     try {
-        const data = await requestJson('/api/query/', {
+        const data = /** @type {QueryResponse} */ (await requestJson('/api/query/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path: state.currentDatabase.path, sql }),
-        });
+        }));
         const finishedAt = new Date();
         const elapsedMs = finishedAt.getTime() - startedAt.getTime();
         const finishedAtText = formatDateTime(finishedAt);
