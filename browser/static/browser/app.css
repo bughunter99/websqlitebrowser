@@ -825,19 +825,28 @@
             gap: 4px;
         }
 
-        .output-actions .button-secondary {
-            min-height: 18px;
-            padding: 0 6px;
-              font-size: 12px;
+        .output-icon-btn {
+            min-height: auto;
+            padding: 0 4px;
+            font-size: 10px;
+            font-weight: normal;
+            border: 1px solid transparent;
+            background: transparent;
+            color: #ffffff;
+            cursor: pointer;
+            line-height: 1;
+            transition: background-color 120ms ease, color 120ms ease;
         }
 
+        .output-icon-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .output-icon-btn:active,
         #output-autohide[aria-pressed="true"] {
-            background: linear-gradient(180deg, #2b5cab, #0a246a);
-            color: #ffffff;
-            border-top-color: #7e9fd6;
-            border-left-color: #7e9fd6;
-            border-right-color: #001a55;
-            border-bottom-color: #001a55;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.1));
+            border-color: rgba(255, 255, 255, 0.3);
         }
 
         .workspace-output.is-collapsed {

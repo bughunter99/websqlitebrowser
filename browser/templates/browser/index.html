@@ -14,7 +14,7 @@
             document.documentElement.style.setProperty('--ui-scale', isMobile ? '1' : '1.2');
         }());
     </script>
-    <link rel="stylesheet" href="{% static 'browser/app.css' %}?v=20260516-25">
+    <link rel="stylesheet" href="{% static 'browser/app.css' %}?v=20260516-26">
 </head>
 <body>
     <div class="app-shell">
@@ -35,7 +35,6 @@
                     <section class="panel panel-chat" data-panel="chat">
                         <h3 class="panel-title">Chat</h3>
                         <div class="chat-panel">
-                            <div id="chat-status" class="status-box"></div>
                             <div id="chat-response" class="chat-log"></div>
                             <div class="chat-composer">
                                 <textarea id="chat-input" placeholder="질문을 입력하세요 (Ctrl+Enter 전송)"></textarea>
@@ -107,8 +106,8 @@
                 <div class="output-toolbar">
                     <span>Output</span>
                     <div class="output-actions">
-                        <button class="button-secondary" id="output-clear">Clear</button>
-                        <button class="button-secondary" id="output-autohide" aria-pressed="false">Auto Hide</button>
+                        <button class="output-icon-btn" id="output-clear" title="Clear">✕</button>
+                        <button class="output-icon-btn" id="output-autohide" aria-pressed="false" title="Auto Hide">▼</button>
                     </div>
                 </div>
                 <div class="output-body" id="output-body"></div>
@@ -116,7 +115,18 @@
         </main>
     </div>
 
-    <script src="{% static 'browser/app.core.js' %}?v=20260516-20"></script>
-    <script src="{% static 'browser/app.events.js' %}?v=20260516-10"></script>
+    <script src="{% static 'browser/app.state.js' %}?v=20260516-1"></script>
+    <script src="{% static 'browser/app.utils.js' %}?v=20260516-1"></script>
+    <script src="{% static 'browser/app.api.js' %}?v=20260516-1"></script>
+    <script src="{% static 'browser/app.sql.js' %}?v=20260516-1"></script>
+    <script src="{% static 'browser/app.grid.js' %}?v=20260516-1"></script>
+    <script src="{% static 'browser/app.tabs.js' %}?v=20260516-1"></script>
+    <script src="{% static 'browser/app.db.js' %}?v=20260516-1"></script>
+    <script src="{% static 'browser/app.query.js' %}?v=20260516-1"></script>
+    <script src="{% static 'browser/app.panel.js' %}?v=20260516-1"></script>
+    <script src="{% static 'browser/app.explorer.js' %}?v=20260516-1"></script>
+    <script src="{% static 'browser/app.grid-interactions.js' %}?v=20260516-1"></script>
+    <script src="{% static 'browser/app.core.js' %}?v=20260516-24"></script>
+    <script src="{% static 'browser/app.events.js' %}?v=20260516-12"></script>
 </body>
 </html>

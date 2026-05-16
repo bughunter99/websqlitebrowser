@@ -9,14 +9,14 @@
             });
         }
 
-        explorerList.addEventListener('click', (event) => {
+        domElements.explorerList.addEventListener('click', (event) => {
             const row = event.target.closest('.explorer-row');
             if (!row) {
                 return;
             }
-            explorerList.focus();
+            domElements.explorerList.focus();
             selectedExplorerPath = row.dataset.path || '';
-            explorerList.querySelectorAll('.explorer-row').forEach((item) => item.classList.remove('selected'));
+            domElements.explorerList.querySelectorAll('.explorer-row').forEach((item) => item.classList.remove('selected'));
             row.classList.add('selected');
 
             if (row.dataset.type === 'file' && row.dataset.isSqlite === '1') {
@@ -24,7 +24,7 @@
             }
         });
 
-        explorerList.addEventListener('dblclick', (event) => {
+        domElements.explorerList.addEventListener('dblclick', (event) => {
             const row = event.target.closest('.explorer-row');
             if (!row) {
                 return;
@@ -41,13 +41,13 @@
             }
         });
 
-        explorerList.addEventListener('keydown', (event) => {
+        domElements.explorerList.addEventListener('keydown', (event) => {
             const handledKeys = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End']);
             if (!handledKeys.has(event.key)) {
                 return;
             }
 
-            const rows = Array.from(explorerList.querySelectorAll('.explorer-row'));
+            const rows = Array.from(domElements.explorerList.querySelectorAll('.explorer-row'));
             if (!rows.length) {
                 return;
             }
@@ -57,7 +57,7 @@
             const currentIndex = rows.findIndex((row) => row.classList.contains('selected'));
             let nextIndex = currentIndex;
             const rowHeight = rows[0] ? Math.max(1, Math.round(rows[0].getBoundingClientRect().height)) : 1;
-            const pageStep = Math.max(1, Math.floor(explorerList.clientHeight / rowHeight) - 1);
+            const pageStep = Math.max(1, Math.floor(domElements.explorerList.clientHeight / rowHeight) - 1);
             if (nextIndex < 0) {
                 nextIndex = 0;
             } else if (event.key === 'Home') {
@@ -79,7 +79,7 @@
                 return;
             }
 
-            explorerList.querySelectorAll('.explorer-row').forEach((row) => row.classList.remove('selected'));
+            domElements.explorerList.querySelectorAll('.explorer-row').forEach((row) => row.classList.remove('selected'));
             nextRow.classList.add('selected');
             nextRow.scrollIntoView({ block: 'nearest' });
             selectedExplorerPath = nextRow.dataset.path || '';
@@ -114,19 +114,13 @@
         async function sendChatMessage() {
             const chatInput = document.getElementById('chat-input');
             const message = chatInput.value.trim();
-            chatStatus.className = 'status-box';
-            chatStatus.textContent = '질의 중...';
-            chatResponse.innerHTML = '';
+            domElements.chatResponse.innerHTML = '';
 
             if (!message) {
-                chatStatus.className = 'status-box error';
-                chatStatus.textContent = '질문을 입력해주세요.';
                 return;
             }
 
             if (!state.currentDatabase) {
-                chatStatus.className = 'status-box error';
-                chatStatus.textContent = '먼저 SQLite 파일을 선택하세요.';
                 return;
             }
 
@@ -140,17 +134,14 @@
                     }),
                 });
 
-                chatStatus.textContent = `응답 수신: ${data.database.name}`;
-                chatResponse.innerHTML = renderChatResponse(data);
+                domElements.chatResponse.innerHTML = renderChatResponse(data);
                 if (data.query_result && !data.query_result.error) {
-                    attachGridInteractions(chatResponse);
+                    attachGridInteractions(domElements.chatResponse);
                 }
                 chatInput.value = '';
                 setStatus('Chat completed', data.suggested_sql ? 'SQL suggested' : data.database.name);
                 outputLog(`CHAT OK ${data.database.name}`);
             } catch (error) {
-                chatStatus.className = 'status-box error';
-                chatStatus.textContent = error.message;
                 setStatus('Chat failed', error.message);
                 outputLog(`CHAT ERROR ${error.message}`, 'error');
             }
@@ -164,12 +155,12 @@
             }
         });
 
-        railButtons.forEach((button) => {
+        domElements.railButtons.forEach((button) => {
             button.addEventListener('click', () => setPanel(button.dataset.target));
         });
 
         document.getElementById('output-clear').addEventListener('click', () => {
-            outputBody.innerHTML = '';
+            domElements.outputBody.innerHTML = '';
             outputLog('OUTPUT CLEARED', 'warn');
         });
 
@@ -183,7 +174,7 @@
 
             outputPanel.classList.toggle('is-collapsed', collapsed);
             outputAutoHideButton.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
-            outputAutoHideButton.textContent = collapsed ? 'Auto Hide On' : 'Auto Hide';
+            outputAutoHideButton.textContent = collapsed ? '▲' : '▼';
 
             try {
                 localStorage.setItem('websqlitebrowser.output.autoHide', collapsed ? '1' : '0');
