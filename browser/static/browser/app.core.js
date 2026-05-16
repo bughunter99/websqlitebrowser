@@ -30,6 +30,36 @@
 
         const railButtons = Array.from(document.querySelectorAll('.rail-button'));
         let selectedExplorerPath = '';
+        const gridRenderState = new WeakMap();
+        let gridContextMenu = null;
+
+        function hideGridContextMenu() {
+            if (gridContextMenu) {
+                gridContextMenu.remove();
+                gridContextMenu = null;
+            }
+        }
+
+        function copyTextToClipboard(text) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).catch(() => {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    textarea.remove();
+                });
+                return;
+            }
+
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            textarea.remove();
+        }
 
         function getSelectedExplorerRow() {
             return explorerList.querySelector('.explorer-row.selected');
@@ -247,42 +277,109 @@
             }
         }
 
-        function renderTable(columns, rows) {
+        function sortRowsByColumn(rows, columns, sortState) {
+            if (!sortState || typeof sortState.col !== 'number' || !sortState.dir) {
+                return rows;
+            }
+            const columnName = columns[sortState.col];
+            if (!columnName) {
+                return rows;
+            }
+
+            const direction = sortState.dir === 'desc' ? -1 : 1;
+            return [...rows].sort((leftRow, rightRow) => {
+                const leftValue = leftRow[columnName];
+                const rightValue = rightRow[columnName];
+
+                const leftNumber = Number(leftValue);
+                const rightNumber = Number(rightValue);
+                const numberComparable = !Number.isNaN(leftNumber) && !Number.isNaN(rightNumber);
+                if (numberComparable) {
+                    return (leftNumber - rightNumber) * direction;
+                }
+
+                return String(leftValue ?? '').localeCompare(String(rightValue ?? ''), undefined, { numeric: true, sensitivity: 'base' }) * direction;
+            });
+        }
+
+        function getInitialColumnWidthByHeader(headerText) {
+            const text = String(headerText ?? '');
+            // Approximate width by character count so initial size follows header text length.
+            const estimated = Math.ceil(text.length * 8) + 24;
+            return Math.min(320, Math.max(72, estimated));
+        }
+
+        function renderTable(columns, rows, sortState = null) {
             if (!columns.length) {
                 return '<div class="empty-state">결과 컬럼이 없습니다.</div>';
             }
 
-            const head = columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('');
-            const body = rows.length
-                ? rows.map((row, rowIndex) => `
-                    <tr>${columns.map((column, columnIndex) => `<td data-row="${rowIndex}" data-col="${columnIndex}">${escapeHtml(row[column] ?? '')}</td>`).join('')}</tr>
+            const sortedRows = sortRowsByColumn(rows, columns, sortState);
+            const head = columns.map((column, columnIndex) => `
+                <th data-col="${columnIndex}" class="grid-sortable ${sortState && sortState.col === columnIndex ? `sorted-${sortState.dir}` : ''}">
+                    <span class="result-th-label">${escapeHtml(column)}</span>
+                    <span class="sort-indicator">${sortState && sortState.col === columnIndex ? (sortState.dir === 'asc' ? '▲' : '▼') : ''}</span>
+                    <span class="result-col-resizer" data-col="${columnIndex + 1}"></span>
+                </th>
+            `).join('');
+            const colgroup = [
+                '<col style="width: 36px;">',
+                ...columns.map((column) => `<col style="width: ${getInitialColumnWidthByHeader(column)}px;">`),
+            ].join('');
+            const body = sortedRows.length
+                ? sortedRows.map((row, rowIndex) => `
+                    <tr>
+                        <td class="row-index-cell">${rowIndex + 1}</td>
+                        ${columns.map((column, columnIndex) => `<td data-row="${rowIndex}" data-col="${columnIndex}">${escapeHtml(row[column] ?? '')}</td>`).join('')}
+                    </tr>
                 `).join('')
-                : `<tr><td colspan="${columns.length}">조회 결과가 없습니다.</td></tr>`;
+                : `<tr><td colspan="${columns.length + 1}">조회 결과가 없습니다.</td></tr>`;
 
             return `
                 <div class="table-wrap">
                     <table class="result-grid">
-                        <thead><tr>${head}</tr></thead>
+                        <colgroup>${colgroup}</colgroup>
+                        <thead><tr><th class="row-index-head">#</th>${head}</tr></thead>
                         <tbody>${body}</tbody>
                     </table>
                 </div>
             `;
         }
 
-        function renderVirtualizedTable(target, columns, rows) {
+        function renderVirtualizedTable(target, columns, rows, sortState = null) {
             if (!columns.length) {
                 target.innerHTML = '<div class="empty-state">결과 컬럼이 없습니다.</div>';
                 return;
             }
 
+            const sortedRows = sortRowsByColumn(rows, columns, sortState);
             const rowHeight = 22;
             const overscan = 10;
-            const templateColumns = `repeat(${columns.length}, minmax(120px, 1fr))`;
+            const columnWidths = [36, ...columns.map((column) => getInitialColumnWidthByHeader(column))];
+            const minColumnWidth = 80;
+            const getTemplateColumns = () => columnWidths.map((width) => `${width}px`).join(' ');
+            const applyTemplateColumns = () => {
+                const template = getTemplateColumns();
+                const head = target.querySelector('.virtual-grid-head');
+                if (head) {
+                    head.style.gridTemplateColumns = template;
+                }
+                target.querySelectorAll('.virtual-grid-tr').forEach((rowEl) => {
+                    rowEl.style.gridTemplateColumns = template;
+                });
+            };
 
             target.innerHTML = `
-                <div class="virtual-grid-wrap" tabindex="0" data-template-columns="${templateColumns}">
-                    <div class="virtual-grid-head" style="grid-template-columns:${templateColumns};" data-column-count="${columns.length}">
-                        ${columns.map((column) => `<div class="virtual-grid-th">${escapeHtml(column)}</div>`).join('')}
+                <div class="virtual-grid-wrap" tabindex="0">
+                    <div class="virtual-grid-head" style="grid-template-columns:${getTemplateColumns()};" data-column-count="${columns.length}">
+                        <div class="virtual-grid-th row-index-head">#</div>
+                        ${columns.map((column, columnIndex) => `
+                            <div class="virtual-grid-th grid-sortable ${sortState && sortState.col === columnIndex ? `sorted-${sortState.dir}` : ''}" data-col="${columnIndex}">
+                                <span class="virtual-grid-th-label">${escapeHtml(column)}</span>
+                                <span class="sort-indicator">${sortState && sortState.col === columnIndex ? (sortState.dir === 'asc' ? '▲' : '▼') : ''}</span>
+                                <span class="virtual-grid-col-resizer" data-col="${columnIndex + 1}"></span>
+                            </div>
+                        `).join('')}
                     </div>
                     <div class="virtual-grid-body" id="virtual-grid-body">
                         <div class="virtual-grid-spacer" id="virtual-grid-spacer"></div>
@@ -298,18 +395,18 @@
                 return;
             }
 
-            spacer.style.height = `${rows.length * rowHeight}px`;
+            spacer.style.height = `${sortedRows.length * rowHeight}px`;
             let lastStart = -1;
             let lastEnd = -1;
 
-            const renderWindow = () => {
+            const renderWindow = (force = false) => {
                 const viewportHeight = body.clientHeight || 320;
                 const scrollTop = body.scrollTop;
                 const start = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan);
                 const visibleCount = Math.ceil(viewportHeight / rowHeight) + overscan * 2;
-                const end = Math.min(rows.length, start + visibleCount);
+                const end = Math.min(sortedRows.length, start + visibleCount);
 
-                if (start === lastStart && end === lastEnd) {
+                if (!force && start === lastStart && end === lastEnd) {
                     return;
                 }
 
@@ -317,26 +414,153 @@
                 lastEnd = end;
                 rowsLayer.style.transform = `translateY(${start * rowHeight}px)`;
 
-                const windowRows = rows.slice(start, end);
+                const windowRows = sortedRows.slice(start, end);
                 rowsLayer.innerHTML = windowRows.map((row, offset) => {
                     const rowIndex = start + offset;
                     const cells = columns.map((column, columnIndex) => {
                         return `<div class="virtual-grid-td" data-row="${rowIndex}" data-col="${columnIndex}">${escapeHtml(row[column] ?? '')}</div>`;
                     }).join('');
-                    return `<div class="virtual-grid-tr" style="grid-template-columns:${templateColumns};">${cells}</div>`;
+                    return `<div class="virtual-grid-tr" style="grid-template-columns:${getTemplateColumns()};"><div class="virtual-grid-td row-index-cell">${rowIndex + 1}</div>${cells}</div>`;
                 }).join('');
             };
+
+            const resizers = Array.from(target.querySelectorAll('.virtual-grid-col-resizer'));
+            resizers.forEach((resizer) => {
+                resizer.addEventListener('mousedown', (event) => {
+                    if (event.button !== 0) {
+                        return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    target.dataset.gridResizing = '1';
+
+                    const colIndex = Number(resizer.dataset.col);
+                    if (isNaN(colIndex)) {
+                        return;
+                    }
+
+                    const startX = event.clientX;
+                    const startWidth = columnWidths[colIndex] || 160;
+
+                    const onMouseMove = (moveEvent) => {
+                        const deltaX = moveEvent.clientX - startX;
+                        columnWidths[colIndex] = Math.max(minColumnWidth, startWidth + deltaX);
+                        applyTemplateColumns();
+                        renderWindow(true);
+                    };
+
+                    const onMouseUp = () => {
+                        document.removeEventListener('mousemove', onMouseMove);
+                        document.removeEventListener('mouseup', onMouseUp);
+                        setTimeout(() => {
+                            delete target.dataset.gridResizing;
+                        }, 0);
+                    };
+
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
+                });
+            });
 
             body.addEventListener('scroll', renderWindow);
             renderWindow();
         }
 
         function renderResultContent(target, columns, rows) {
-            if (rows.length >= 1000) {
-                renderVirtualizedTable(target, columns, rows);
+            const renderState = gridRenderState.get(target) || { sort: null };
+            const sourceRows = Array.isArray(rows) ? rows : [];
+            gridRenderState.set(target, { columns, rows: sourceRows, sort: renderState.sort || null });
+
+            if (sourceRows.length >= 1000) {
+                renderVirtualizedTable(target, columns, sourceRows, renderState.sort || null);
+                initGridSorting(target);
                 return;
             }
-            target.innerHTML = renderTable(columns, rows);
+            target.innerHTML = renderTable(columns, sourceRows, renderState.sort || null);
+            initGridSorting(target);
+        }
+
+        function initGridSorting(target) {
+            const stateForTarget = gridRenderState.get(target);
+            if (!stateForTarget) {
+                return;
+            }
+
+            const sortableHeaders = Array.from(target.querySelectorAll('.grid-sortable'));
+            sortableHeaders.forEach((header) => {
+                header.addEventListener('click', (event) => {
+                    if (event.target.closest('.result-col-resizer, .virtual-grid-col-resizer')) {
+                        return;
+                    }
+                    if (target.dataset.gridResizing === '1') {
+                        return;
+                    }
+
+                    const colIndex = Number(header.dataset.col);
+                    if (isNaN(colIndex)) {
+                        return;
+                    }
+
+                    const currentSort = stateForTarget.sort;
+                    const nextSort = currentSort && currentSort.col === colIndex && currentSort.dir === 'asc'
+                        ? { col: colIndex, dir: 'desc' }
+                        : { col: colIndex, dir: 'asc' };
+
+                    gridRenderState.set(target, { ...stateForTarget, sort: nextSort });
+                    renderResultContent(target, stateForTarget.columns, stateForTarget.rows);
+                    attachGridInteractions(target);
+                });
+            });
+        }
+
+        function initResultGridColumnResize(container) {
+            const table = container.querySelector('.result-grid');
+            if (!table || table.dataset.resizeInit === '1') {
+                return;
+            }
+            table.dataset.resizeInit = '1';
+
+            const cols = Array.from(table.querySelectorAll('colgroup col'));
+            if (!cols.length) {
+                return;
+            }
+
+            const resizers = Array.from(table.querySelectorAll('.result-col-resizer'));
+            resizers.forEach((resizer) => {
+                resizer.addEventListener('mousedown', (event) => {
+                    if (event.button !== 0) {
+                        return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    container.dataset.gridResizing = '1';
+
+                    const colIndex = Number(resizer.dataset.col);
+                    if (isNaN(colIndex) || !cols[colIndex]) {
+                        return;
+                    }
+
+                    const startX = event.clientX;
+                    const startWidth = cols[colIndex].getBoundingClientRect().width;
+
+                    const onMouseMove = (moveEvent) => {
+                        const deltaX = moveEvent.clientX - startX;
+                        const nextWidth = Math.max(80, startWidth + deltaX);
+                        cols[colIndex].style.width = `${nextWidth}px`;
+                    };
+
+                    const onMouseUp = () => {
+                        document.removeEventListener('mousemove', onMouseMove);
+                        document.removeEventListener('mouseup', onMouseUp);
+                        setTimeout(() => {
+                            delete container.dataset.gridResizing;
+                        }, 0);
+                    };
+
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
+                });
+            });
         }
 
         function renderMultiQueryResults(target, results) {
@@ -480,6 +704,8 @@
                 return;
             }
 
+            initResultGridColumnResize(container);
+
             const getRowCol = (cell) => {
                 const row = Number(cell.dataset.row);
                 const col = Number(cell.dataset.col);
@@ -522,6 +748,25 @@
                     for (let c = minCol; c <= maxCol; c++) {
                         state.selectedCells.add(getCellKey(r, c));
                     }
+                }
+                updateSelectionDisplay();
+            };
+
+            const selectEntireRow = (rowIndex) => {
+                const rowCells = Array.from(grid.querySelectorAll(`[data-row="${rowIndex}"][data-col]`));
+                if (!rowCells.length) {
+                    return;
+                }
+                state.selectedCells.clear();
+                rowCells.forEach((cell) => {
+                    const rc = getRowCol(cell);
+                    if (rc) {
+                        state.selectedCells.add(getCellKey(rc.row, rc.col));
+                    }
+                });
+                const first = getRowCol(rowCells[0]);
+                if (first) {
+                    setActiveCell(first.row, first.col);
                 }
                 updateSelectionDisplay();
             };
@@ -574,8 +819,72 @@
                 selectRange(state.gridLastClickedCell, rc);
             });
 
+            grid.addEventListener('contextmenu', (event) => {
+                const cell = event.target.closest('td, .virtual-grid-td');
+                if (!cell || cell.classList.contains('row-index-cell')) {
+                    return;
+                }
+
+                const rc = getRowCol(cell);
+                if (!rc) {
+                    return;
+                }
+
+                event.preventDefault();
+                hideGridContextMenu();
+
+                const menu = document.createElement('div');
+                menu.className = 'grid-context-menu';
+                menu.innerHTML = [
+                    '<button type="button" data-action="copy-cell">Copy Cell</button>',
+                    '<button type="button" data-action="copy-selected">Copy Selected</button>',
+                    '<button type="button" data-action="select-row">Select Row</button>',
+                    '<button type="button" data-action="clear-selection">Clear Selection</button>',
+                ].join('');
+
+                const onAction = (action) => {
+                    if (action === 'copy-cell') {
+                        copyTextToClipboard(cell.textContent || '');
+                    } else if (action === 'copy-selected') {
+                        copySelectedCells();
+                    } else if (action === 'select-row') {
+                        selectEntireRow(rc.row);
+                    } else if (action === 'clear-selection') {
+                        state.selectedCells.clear();
+                        updateSelectionDisplay();
+                    }
+                    hideGridContextMenu();
+                };
+
+                menu.addEventListener('click', (menuEvent) => {
+                    const button = menuEvent.target.closest('button[data-action]');
+                    if (!button) {
+                        return;
+                    }
+                    onAction(button.dataset.action);
+                });
+
+                document.body.appendChild(menu);
+                gridContextMenu = menu;
+
+                const maxLeft = Math.max(0, window.innerWidth - menu.offsetWidth - 4);
+                const maxTop = Math.max(0, window.innerHeight - menu.offsetHeight - 4);
+                menu.style.left = `${Math.min(event.clientX, maxLeft)}px`;
+                menu.style.top = `${Math.min(event.clientY, maxTop)}px`;
+            });
+
             document.addEventListener('mouseup', () => {
                 state.gridDragging = false;
+            });
+
+            document.addEventListener('mousedown', (event) => {
+                if (!gridContextMenu) {
+                    return;
+                }
+                if (event.target.closest('.grid-context-menu')) {
+                    return;
+                }
+                hideGridContextMenu();
             });
 
             // Keyboard interactions
@@ -644,73 +953,10 @@
                     const rc = getRowCol(firstCell);
                     if (rc) {
                         setActiveCell(rc.row, rc.col);
-                        return;
                     }
                 }
             }
 
-
-               // Add column resize support
-               const head = container.querySelector('.virtual-grid-head');
-               if (head) {
-                   const resizeResizer = (startX, colIndex, headers) => {
-                       let isResizing = false;
-                       let initialX = 0;
-                       let initialWidth = 0;
-
-                       const onMouseMove = (e) => {
-                           if (!isResizing) return;
-                           const deltaX = e.clientX - initialX;
-                           const newWidth = Math.max(40, initialWidth + deltaX);
-                       
-                           // Update grid template columns
-                           const wrap = container.querySelector('.virtual-grid-wrap');
-                           if (wrap) {
-                               const rect = wrap.getBoundingClientRect();
-                               const totalWidth = rect.width;
-                               const percentChange = ((newWidth - initialWidth) / totalWidth) * 100;
-                           
-                               // Recalculate all column widths
-                               const head = container.querySelector('.virtual-grid-head');
-                               const rows = container.querySelectorAll('.virtual-grid-tr');
-                               const newTemplate = Array(headers.length).fill(0).map((_, i) => {
-                                   return i === colIndex ? `${newWidth}px` : 'minmax(120px, 1fr)';
-                               }).join(' ');
-                           
-                               head.style.gridTemplateColumns = newTemplate;
-                               rows.forEach(row => row.style.gridTemplateColumns = newTemplate);
-                           }
-                       };
-
-                       const onMouseUp = () => {
-                           isResizing = false;
-                           document.removeEventListener('mousemove', onMouseMove);
-                           document.removeEventListener('mouseup', onMouseUp);
-                       };
-
-                       return (e) => {
-                           if (e.button !== 0) return;
-                           isResizing = true;
-                           initialX = e.clientX;
-                           initialWidth = headers[colIndex].getBoundingClientRect().width;
-                           document.addEventListener('mousemove', onMouseMove);
-                           document.addEventListener('mouseup', onMouseUp);
-                       };
-                   };
-
-                   const headers = Array.from(head.querySelectorAll('.virtual-grid-th'));
-                   headers.forEach((header, idx) => {
-                       header.addEventListener('mousedown', (e) => {
-                           // Only handle resize if near the right edge
-                           const rect = header.getBoundingClientRect();
-                           const distFromRight = rect.right - e.clientX;
-                           if (distFromRight <= 6) {
-                               e.preventDefault();
-                               resizeResizer(e.clientX, idx, headers)(e);
-                           }
-                       });
-                   });
-               }
 
             updateSelectionDisplay();
         }
