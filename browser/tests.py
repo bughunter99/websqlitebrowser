@@ -46,7 +46,7 @@ class BrowserApiTests(TestCase):
 
 		payload = response.json()
 		tables = payload['database']['tables']
-		self.assertEqual([table['name'] for table in tables], ['customers', 'orders'])
+		self.assertEqual([table['name'] for table in tables], ['customers', 'orders', 'sample'])
 		self.assertEqual(tables[0]['columns'][0]['name'], 'id')
 		self.assertIn('create_sql', tables[0])
 		self.assertIn('indexes', tables[0])
@@ -91,7 +91,7 @@ class BrowserApiTests(TestCase):
 		self.assertEqual(response.status_code, 400)
 		self.assertIn('LLM endpoint is required', response.json()['error'])
 
-	@mock.patch('browser.views.urllib.request.urlopen')
+	@mock.patch('browser.services.urllib.request.urlopen')
 	def test_chat_executes_returned_sql(self, mocked_urlopen):
 		self.client.post(
 			'/api/settings/',

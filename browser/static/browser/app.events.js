@@ -1,0 +1,187 @@
+        document.querySelectorAll('.nav-button').forEach((button) => {
+            button.addEventListener('click', () => setPanel(button.dataset.target));
+        });
+
+        document.getElementById('go-parent').addEventListener('click', (event) => {
+            outputLog('NAV parent');
+            loadTree(event.currentTarget.dataset.parentPath || '');
+        });
+
+        document.getElementById('reload-tree').addEventListener('click', () => {
+            outputLog('NAV reload');
+            loadTree(state.currentPath);
+        });
+
+        explorerList.addEventListener('click', (event) => {
+            const row = event.target.closest('.explorer-row');
+            if (!row) {
+                return;
+            }
+            selectedExplorerPath = row.dataset.path || '';
+            explorerList.querySelectorAll('.explorer-row').forEach((item) => item.classList.remove('selected'));
+            row.classList.add('selected');
+
+            if (row.dataset.type === 'file' && row.dataset.isSqlite === '1') {
+                openDatabase(selectedExplorerPath);
+            }
+        });
+
+        explorerList.addEventListener('dblclick', (event) => {
+            const row = event.target.closest('.explorer-row');
+            if (!row) {
+                return;
+            }
+
+            const targetPath = row.dataset.path || '';
+            if (row.dataset.type === 'parent' || row.dataset.type === 'directory') {
+                outputLog(`NAV ${targetPath || '..'}`);
+                loadTree(targetPath);
+                return;
+            }
+            if (row.dataset.isSqlite === '1') {
+                openDatabase(targetPath);
+            }
+        });
+
+        document.getElementById('save-settings').addEventListener('click', async () => {
+            const status = document.getElementById('settings-status');
+            status.className = 'status-box';
+            status.textContent = '저장 중...';
+
+            try {
+                await requestJson('/api/settings/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        endpoint: document.getElementById('llm-endpoint').value,
+                        token: document.getElementById('llm-token').value,
+                        model: document.getElementById('llm-model').value,
+                    }),
+                });
+                status.textContent = '서버에 설정을 저장했습니다.';
+            } catch (error) {
+                status.className = 'status-box error';
+                status.textContent = error.message;
+            }
+        });
+
+        async function sendChatMessage() {
+            const chatInput = document.getElementById('chat-input');
+            const message = chatInput.value.trim();
+            chatStatus.className = 'status-box';
+            chatStatus.textContent = '질의 중...';
+            chatResponse.innerHTML = '';
+
+            if (!message) {
+                chatStatus.className = 'status-box error';
+                chatStatus.textContent = '질문을 입력해주세요.';
+                return;
+            }
+
+            if (!state.currentDatabase) {
+                chatStatus.className = 'status-box error';
+                chatStatus.textContent = '먼저 SQLite 파일을 선택하세요.';
+                return;
+            }
+
+            try {
+                const data = await requestJson('/api/chat/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        path: state.currentDatabase.path,
+                        message,
+                    }),
+                });
+
+                chatStatus.textContent = `응답 수신: ${data.database.name}`;
+                chatResponse.innerHTML = renderChatResponse(data);
+                if (data.query_result && !data.query_result.error) {
+                    attachGridInteractions(chatResponse);
+                }
+                chatInput.value = '';
+                setStatus('Chat completed', data.suggested_sql ? 'SQL suggested' : data.database.name);
+                outputLog(`CHAT OK ${data.database.name}`);
+            } catch (error) {
+                chatStatus.className = 'status-box error';
+                chatStatus.textContent = error.message;
+                setStatus('Chat failed', error.message);
+                outputLog(`CHAT ERROR ${error.message}`, 'error');
+            }
+        }
+
+        document.getElementById('chat-send').addEventListener('click', sendChatMessage);
+        document.getElementById('chat-input').addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                event.preventDefault();
+                sendChatMessage();
+            }
+        });
+
+        railButtons.forEach((button) => {
+            button.addEventListener('click', () => setPanel(button.dataset.target));
+        });
+
+        document.getElementById('output-clear').addEventListener('click', () => {
+            outputBody.innerHTML = '';
+            outputLog('OUTPUT CLEARED', 'warn');
+        });
+
+        const outputPanel = document.querySelector('.workspace-output');
+        const outputAutoHideButton = document.getElementById('output-autohide');
+
+        function setOutputAutoHide(collapsed) {
+            if (!outputPanel || !outputAutoHideButton) {
+                return;
+            }
+
+            outputPanel.classList.toggle('is-collapsed', collapsed);
+            outputAutoHideButton.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+            outputAutoHideButton.textContent = collapsed ? 'Auto Hide On' : 'Auto Hide';
+
+            try {
+                localStorage.setItem('websqlitebrowser.output.autoHide', collapsed ? '1' : '0');
+            } catch {
+                // Ignore storage write failures.
+            }
+        }
+
+        if (outputPanel && outputAutoHideButton) {
+            let initialCollapsed = false;
+            try {
+                initialCollapsed = localStorage.getItem('websqlitebrowser.output.autoHide') === '1';
+            } catch {
+                initialCollapsed = false;
+            }
+            setOutputAutoHide(initialCollapsed);
+
+            outputAutoHideButton.addEventListener('click', () => {
+                const collapsed = outputPanel.classList.contains('is-collapsed');
+                setOutputAutoHide(!collapsed);
+            });
+        }
+
+        workspaceReload.addEventListener('click', () => loadTree(state.currentPath));
+        workspaceFocusQuery.addEventListener('click', () => {
+            activateTab('query');
+            const editor = document.getElementById('sql-editor');
+            if (editor) {
+                editor.focus();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c' && copySelectedCells()) {
+                event.preventDefault();
+                return;
+            }
+
+            if (event.key === 'F9' && document.activeElement && document.activeElement.id === 'sql-editor') {
+                event.preventDefault();
+                runQuery();
+            }
+        });
+
+        loadSettings();
+        loadTree();
+        outputLog('READY');
