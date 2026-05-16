@@ -1,5 +1,9 @@
 # websqlitebrowser
 
+## 문서
+
+- 구현 반영 내역: [doc/implementation-update-20260516.md](doc/implementation-update-20260516.md)
+
 ## 원본 요구사항 메모
 
 여기 web으로 sqlite를 브라우징하는 앱을 만들꺼야. 윈도우나 리눅스에서 실행할꺼고,

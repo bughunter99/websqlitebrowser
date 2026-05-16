@@ -1,0 +1,52 @@
+<testsuites id="" name="" tests="23" failures="0" skipped="0" errors="0" time="41.195152">
+<testsuite name="regression.spec.js" timestamp="2026-05-16T09:01:30.786Z" hostname="" tests="20" failures="0" skipped="0" time="33.784" errors="0">
+<testcase name="멀티 쿼리 실행 시 result 탭이 생성된다" classname="regression.spec.js" time="2.169">
+</testcase>
+<testcase name="그리드 셀 범위 선택이 동작한다" classname="regression.spec.js" time="1.859">
+</testcase>
+<testcase name="탐색기 키보드로 항목 선택이 이동한다" classname="regression.spec.js" time="1.512">
+</testcase>
+<testcase name="단일 쿼리 실행 시 결과 그리드가 렌더링된다" classname="regression.spec.js" time="1.79">
+</testcase>
+<testcase name="연속 실행 시 이전 쿼리 응답이 최신 결과를 덮어쓰지 않는다" classname="regression.spec.js" time="2.43">
+</testcase>
+<testcase name="Output Auto Hide 토글이 동작한다" classname="regression.spec.js" time="0.652">
+</testcase>
+<testcase name="Data Explorer 필터 입력 시 하이라이트가 표시된다" classname="regression.spec.js" time="1.42">
+</testcase>
+<testcase name="DDL 탭 전환 시 테이블 스키마 섹션이 보인다" classname="regression.spec.js" time="1.742">
+</testcase>
+<testcase name="테이블 탭 재진입 시 데이터 재요청 없이 캐시를 사용한다" classname="regression.spec.js" time="1.799">
+</testcase>
+<testcase name="지연된 실패 응답이 최신 테이블 성공 결과를 덮어쓰지 않는다" classname="regression.spec.js" time="1.811">
+</testcase>
+<testcase name="멀티 쿼리 결과 탭을 전환할 수 있다" classname="regression.spec.js" time="1.652">
+</testcase>
+<testcase name="활동 레일로 Explorer/Chat/Setting 패널 전환이 된다" classname="regression.spec.js" time="0.782">
+</testcase>
+<testcase name="연속 전송 시 이전 chat 응답이 최신 응답을 덮어쓰지 않는다" classname="regression.spec.js" time="2.487">
+</testcase>
+<testcase name="chat 전송 중에는 중복 요청을 막고 전송 버튼을 복구한다" classname="regression.spec.js" time="1.98">
+</testcase>
+<testcase name="Output 로그에 타임스탬프와 쿼리 시작/종료 로그가 남는다" classname="regression.spec.js" time="1.651">
+</testcase>
+<testcase name="탐색기 Home/End/PageDown 키로 선택이 끝단으로 이동한다" classname="regression.spec.js" time="1.034">
+</testcase>
+<testcase name="그리드 컨텍스트 메뉴의 Select Row/Clear Selection이 동작한다" classname="regression.spec.js" time="1.922">
+</testcase>
+<testcase name="Query 패널의 split과 하이라이트 영역이 로드된다" classname="regression.spec.js" time="1.632">
+</testcase>
+<testcase name="쿼리 실행 중에는 중복 요청을 막고 에디터를 복구한다" classname="regression.spec.js" time="1.889">
+</testcase>
+<testcase name="쿼리 API가 invalid JSON을 반환해도 에디터 pending이 복구된다" classname="regression.spec.js" time="1.571">
+</testcase>
+</testsuite>
+<testsuite name="smoke.spec.js" timestamp="2026-05-16T09:01:30.786Z" hostname="" tests="3" failures="0" skipped="0" time="4.59" errors="0">
+<testcase name="앱 기본 화면이 로드된다" classname="smoke.spec.js" time="1.206">
+</testcase>
+<testcase name="샘플 DB를 열 수 있다" classname="smoke.spec.js" time="1.646">
+</testcase>
+<testcase name="F9로 단일 쿼리를 실행할 수 있다" classname="smoke.spec.js" time="1.738">
+</testcase>
+</testsuite>
+</testsuites>
