@@ -222,6 +222,16 @@ SELECT name FROM sqlite_master WHERE type = 'table';
 SELECT name FROM sqlite_master WHERE type = 'table2';
 
 
+그리고 쿼리 실행할때 언제 실행했다, 몇 row fetch 됐다,
+뭐 이런 정보 나오게 해줘.
+
+
+또 output 창에 젤 앞에 시간이 YYYYMMDD HH24MISS 이렇게 나오게 해줘.
+
+
+
+
+
 
 
 ---

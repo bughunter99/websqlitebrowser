@@ -43,10 +43,20 @@
             if (!outputBody) {
                 return;
             }
-            const stamp = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+            const now = new Date();
+            const pad = (number) => String(number).padStart(2, '0');
+            const stamp = [
+                now.getFullYear(),
+                pad(now.getMonth() + 1),
+                pad(now.getDate()),
+            ].join('') + ' ' + [
+                pad(now.getHours()),
+                pad(now.getMinutes()),
+                pad(now.getSeconds()),
+            ].join('');
             const line = document.createElement('div');
             line.className = `output-line${level === 'info' ? '' : ` ${level}`}`;
-            line.textContent = `[${stamp}] ${message}`;
+            line.textContent = `${stamp} ${message}`;
             outputBody.appendChild(line);
 
             const maxLines = 300;
@@ -54,6 +64,19 @@
                 outputBody.removeChild(outputBody.firstElementChild);
             }
             outputBody.scrollTop = outputBody.scrollHeight;
+        }
+
+        function formatDateTime(value) {
+            const pad = (number) => String(number).padStart(2, '0');
+            return [
+                value.getFullYear(),
+                pad(value.getMonth() + 1),
+                pad(value.getDate()),
+            ].join('-') + ' ' + [
+                pad(value.getHours()),
+                pad(value.getMinutes()),
+                pad(value.getSeconds()),
+            ].join(':');
         }
 
         function escapeHtml(value) {
@@ -267,6 +290,57 @@
                 return;
             }
             target.innerHTML = renderTable(columns, rows);
+        }
+
+        function renderMultiQueryResults(target, results) {
+            if (!Array.isArray(results) || !results.length) {
+                target.className = 'status-box';
+                target.textContent = '조회 결과가 없습니다.';
+                return;
+            }
+
+            target.className = '';
+            target.innerHTML = `
+                <div class="query-multi-results">
+                    <div class="query-multi-panels" id="query-multi-panels"></div>
+                    <div class="query-multi-tabs" id="query-multi-tabs"></div>
+                </div>
+            `;
+
+            const tabsHost = target.querySelector('#query-multi-tabs');
+            const panelsHost = target.querySelector('#query-multi-panels');
+            if (!tabsHost || !panelsHost) {
+                return;
+            }
+
+            const activate = (index) => {
+                tabsHost.querySelectorAll('.query-multi-tab').forEach((button) => {
+                    button.classList.toggle('active', Number(button.dataset.index) === index);
+                });
+                panelsHost.querySelectorAll('.query-multi-panel').forEach((panel) => {
+                    panel.classList.toggle('active', Number(panel.dataset.index) === index);
+                });
+            };
+
+            results.forEach((result, idx) => {
+                const index = idx + 1;
+                const tab = document.createElement('button');
+                tab.className = 'query-multi-tab';
+                tab.dataset.index = String(index);
+                tab.textContent = `result${index}`;
+                tab.addEventListener('click', () => activate(index));
+                tabsHost.appendChild(tab);
+
+                const panel = document.createElement('div');
+                panel.className = 'query-multi-panel';
+                panel.dataset.index = String(index);
+                panelsHost.appendChild(panel);
+
+                renderResultContent(panel, result.columns || [], result.rows || []);
+                attachGridInteractions(panel);
+            });
+
+            activate(1);
         }
 
         function renderMetaTable(headers, rows) {
@@ -660,10 +734,13 @@
             }
 
             const sql = document.getElementById('sql-editor').value;
+            const startedAt = new Date();
+            const startedAtText = formatDateTime(startedAt);
             setStatus('Running query…', state.currentDatabase.name);
             target.className = 'status-box';
             target.textContent = '실행 중...';
-            outputLog(`QUERY ${sql.replace(/\s+/g, ' ').trim().slice(0, 180)}`);
+            outputLog(`QUERY START at=${startedAtText} db=${state.currentDatabase.name}`);
+            outputLog(`QUERY SQL ${sql.replace(/\s+/g, ' ').trim().slice(0, 180)}`);
 
             try {
                 const data = await requestJson('/api/query/', {
@@ -671,11 +748,30 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ path: state.currentDatabase.path, sql }),
                 });
-                target.className = '';
-                renderResultContent(target, data.columns, data.rows);
-                attachGridInteractions(target);
-                setStatus(`Rows: ${data.row_count}`, data.truncated ? 'Truncated' : state.currentDatabase.name);
-                outputLog(`QUERY OK rows=${Number(data.row_count || 0)}${data.truncated ? ' truncated=true' : ''}`);
+                const finishedAt = new Date();
+                const elapsedMs = finishedAt.getTime() - startedAt.getTime();
+                const finishedAtText = formatDateTime(finishedAt);
+
+                if (Array.isArray(data.results)) {
+                    renderMultiQueryResults(target, data.results);
+                    const totalRows = data.results.reduce(
+                        (acc, item) => acc + Number(item.row_count || item.rows?.length || 0),
+                        0
+                    );
+                    setStatus(`Results: ${data.results.length} | Rows: ${totalRows}`, `${elapsedMs} ms`);
+                    outputLog(`QUERY END at=${finishedAtText} elapsed=${elapsedMs}ms results=${data.results.length} rows=${totalRows}`);
+                    data.results.forEach((item, index) => {
+                        outputLog(`RESULT ${index + 1} rows=${Number(item.row_count || item.rows?.length || 0)}${item.truncated ? ' truncated=true' : ''}`);
+                    });
+                } else {
+                    target.className = '';
+                    renderResultContent(target, data.columns, data.rows);
+                    attachGridInteractions(target);
+                    const fetchedRows = Number(data.row_count || 0);
+                    const truncatedText = data.truncated ? ' | Truncated' : '';
+                    setStatus(`Rows: ${fetchedRows}${truncatedText}`, `${elapsedMs} ms`);
+                    outputLog(`QUERY END at=${finishedAtText} elapsed=${elapsedMs}ms rows=${fetchedRows}${data.truncated ? ' truncated=true' : ''}`);
+                }
             } catch (error) {
                 target.className = 'status-box error';
                 target.textContent = error.message;

@@ -261,15 +261,38 @@ def validate_read_only_sql(sql: str) -> str:
     if not cleaned:
         raise SuspiciousOperation('SQL is required.')
 
-    statements = [part.strip() for part in cleaned.split(';') if part.strip()]
-    if len(statements) != 1:
-        raise SuspiciousOperation('Only one SQL statement is allowed.')
-
-    normalized = statements[0].lower()
+    normalized = cleaned.lower()
     if not normalized.startswith(READ_ONLY_PREFIXES):
         raise SuspiciousOperation('Only read-only SQL statements are allowed.')
 
-    return statements[0]
+    return cleaned
+
+
+def split_sql_statements(sql: str) -> list[str]:
+    cleaned = sql.strip()
+    if not cleaned:
+        raise SuspiciousOperation('SQL is required.')
+
+    statements: list[str] = []
+    buffer = ''
+    for line in sql.splitlines(keepends=True):
+        buffer += line
+        if sqlite3.complete_statement(buffer):
+            statement = buffer.strip()
+            if statement.endswith(';'):
+                statement = statement[:-1].strip()
+            if statement:
+                statements.append(statement)
+            buffer = ''
+
+    tail = buffer.strip()
+    if tail:
+        statements.append(tail)
+
+    if not statements:
+        raise SuspiciousOperation('SQL is required.')
+
+    return statements
 
 
 def translate_oracle_rownum(sql: str) -> str:
@@ -296,10 +319,32 @@ def translate_oracle_rownum(sql: str) -> str:
 
 
 def run_read_only_query(database_path: Path, sql: str) -> dict[str, object]:
-    validated_sql = translate_oracle_rownum(validate_read_only_sql(sql))
+    statements = split_sql_statements(sql)
+
+    if len(statements) == 1:
+        validated_sql = translate_oracle_rownum(validate_read_only_sql(statements[0]))
+        with connect_database(database_path) as connection:
+            cursor = connection.execute(validated_sql)
+            return serialize_rows(cursor)
+
+    validated_statements = [
+        translate_oracle_rownum(validate_read_only_sql(statement))
+        for statement in statements
+    ]
+
     with connect_database(database_path) as connection:
-        cursor = connection.execute(validated_sql)
-        return serialize_rows(cursor)
+        results: list[dict[str, object]] = []
+        for index, statement in enumerate(validated_statements, start=1):
+            cursor = connection.execute(statement)
+            payload = serialize_rows(cursor)
+            payload['statement_index'] = index
+            payload['statement_sql'] = statement
+            results.append(payload)
+
+    return {
+        'results': results,
+        'result_count': len(results),
+    }
 
 
 def extract_sql_from_text(text: str) -> str:

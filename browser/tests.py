@@ -68,6 +68,34 @@ class BrowserApiTests(TestCase):
 		self.assertEqual(payload['columns'], ['name'])
 		self.assertEqual([row['name'] for row in payload['rows']], ['Kim Mina', 'Park Joon', 'Lee Sora'])
 
+	def test_run_query_executes_multiple_read_only_sql(self):
+		response = self.client.post(
+			'/api/query/',
+			data=json.dumps(
+				{
+					'path': 'sample.db',
+					'sql': (
+						"SELECT name FROM sqlite_master WHERE type = 'table';\n"
+						"SELECT name FROM customers ORDER BY id LIMIT 2;"
+					),
+				}
+			),
+			content_type='application/json',
+		)
+		self.assertEqual(response.status_code, 200)
+
+		payload = response.json()
+		self.assertIn('results', payload)
+		self.assertEqual(payload['result_count'], 2)
+		self.assertEqual(payload['results'][0]['statement_index'], 1)
+		self.assertEqual(payload['results'][1]['statement_index'], 2)
+		self.assertEqual(payload['results'][0]['columns'], ['name'])
+		self.assertEqual(payload['results'][1]['columns'], ['name'])
+		self.assertEqual(
+			[row['name'] for row in payload['results'][1]['rows']],
+			['Kim Mina', 'Park Joon'],
+		)
+
 	def test_settings_persist_in_repository(self):
 		response = self.client.post(
 			'/api/settings/',
