@@ -10,6 +10,10 @@
 - 원인: OpenAI 호환 엔드포인트(`/chat/completions`)를 강제로 붙이던 로직이 Anthropic `/v1/messages` 주소와 충돌.
 - 조치: Anthropic 엔드포인트 감지 후 `/v1/messages` 형식으로 유지하고, 헤더/페이로드/응답 파싱을 Anthropic 규격으로 분기 처리.
 - 기본 LLM 설정값을 Anthropic(`https://api.anthropic.com/v1/messages`, `claude-3-5-haiku-20241022`)로 고정하고, 실패 시 Output에 요청 요약/응답 본문이 남도록 디버그 로그를 강화했다.
+- 초기 로딩 500 오류(`Path.is_dir(..., follow_symlinks=False)` 인자 미지원)를 수정했다. `pathlib` 호환을 위해 심볼릭 링크는 `is_symlink()`로 제외하고 `is_dir()/is_file()`로 판정하도록 변경했다.
+- Anthropic에서 `model not_found`가 발생하면 `/v1/models`를 추가 조회해 현재 API 키로 사용 가능한 모델 목록을 에러 메시지에 함께 출력하도록 개선했다.
+- 기본 모델을 `claude-haiku-4-5-20251001`로 변경했다.
+- 연결 테스트 성공 시 설정값을 자동 저장하도록 바꿔 Chat이 같은 값을 즉시 사용하게 했고, 마스킹 토큰(`***`)이 실제 토큰을 덮어쓰지 않도록 보호 로직을 추가했다.
 
 ## 원본 요구사항 메모
 
@@ -378,6 +382,14 @@ directory_stats() 함수에서 현재 디렉토리의 모든 하위 디렉토리
 
 
 https://console.anthropic.com
+
+
+
+20260517 202349 SETTINGS TEST REQUEST endpoint=https://api.anthropic.com/v1/messages model=claude-3-5-haiku-20241022 token=[set]
+20260517 202350 SETTINGS TEST ERROR LLM request failed with status 404. request={"provider": "anthropic", "endpoint": "https://api.anthropic.com/v1/messages", "method": "POST", "model": "claude-3-5-haiku-20241022", "payload_keys": ["max_tokens", "messages", "model", "system", "temperature"]} response={"type":"error","error":{"type":"not_found_error","message":"model: claude-3-5-haiku-20241022"},"request_id":"req_011Cb84DBWyJj9yTGprS9y64"} available_models=claude-opus-4-7, claude-sonnet-4-6, claude-opus-4-6, claude-opus-4-5-20251101, claude-haiku-4-5-20251001, claude-sonnet-4-5-20250929, claude-opus-4-1-20250805, claude-opus-4-20250514, claude-sonnet-4-20250514
+
+
+
 
 
 

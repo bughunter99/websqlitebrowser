@@ -18,7 +18,11 @@ DEFAULT_ROW_LIMIT = 100
 DEFAULT_SAMPLE_LIMIT = 3
 SETTINGS_FILENAME = '.websqlitebrowser-settings.json'
 DEFAULT_LLM_ENDPOINT = 'https://api.anthropic.com/v1/messages'
-DEFAULT_LLM_MODEL = 'claude-3-5-haiku-20241022'
+DEFAULT_LLM_MODEL = 'claude-haiku-4-5-20251001'
+LEGACY_DEFAULT_LLM_ENDPOINTS = {
+    'http://127.0.0.1:11434/v1',
+    'http://localhost:11434/v1',
+}
 ORACLE_ROWNUM_PATTERN = re.compile(r'(?is)\s+(where|and)\s+rownum\s*(<|<=)\s*(\d+)\s*$')
 FENCED_SQL_PATTERN = re.compile(r'```(?:sql)?\s*(.*?)```', re.IGNORECASE | re.DOTALL)
 FENCED_JSON_PATTERN = re.compile(r'```(?:json)?\s*(\{.*?\})\s*```', re.IGNORECASE | re.DOTALL)
@@ -233,10 +237,25 @@ def load_settings() -> dict[str, str]:
     with path.open('r', encoding='utf-8') as handle:
         data = json.load(handle)
 
+    endpoint = str(data.get('endpoint', DEFAULT_LLM_ENDPOINT)).strip() or DEFAULT_LLM_ENDPOINT
+    model = str(data.get('model', DEFAULT_LLM_MODEL)).strip() or DEFAULT_LLM_MODEL
+
+    # One-time migration for previous local Ollama defaults.
+    if endpoint in LEGACY_DEFAULT_LLM_ENDPOINTS:
+        endpoint = DEFAULT_LLM_ENDPOINT
+    if model in {
+        'llama3.1',
+        'llama3',
+        'qwen2.5',
+        'tinyllama:latest',
+        'claude-3-5-haiku-20241022',
+    }:
+        model = DEFAULT_LLM_MODEL
+
     return {
-        'endpoint': str(data.get('endpoint', DEFAULT_LLM_ENDPOINT)).strip() or DEFAULT_LLM_ENDPOINT,
+        'endpoint': endpoint,
         'token': _decrypt_token(str(data.get('token', ''))),
-        'model': str(data.get('model', DEFAULT_LLM_MODEL)).strip() or DEFAULT_LLM_MODEL,
+        'model': model,
     }
 
 
@@ -395,6 +414,49 @@ def detect_llm_provider(endpoint: str) -> str:
     if 'api.anthropic.com' in lower or lower.endswith('/messages'):
         return 'anthropic'
     return 'openai-compatible'
+
+
+def _anthropic_models_endpoint(messages_endpoint: str) -> str:
+    cleaned = messages_endpoint.strip().rstrip('/')
+    suffix = '/messages'
+    if cleaned.lower().endswith(suffix):
+        return f'{cleaned[:-len(suffix)]}/models'
+    if cleaned.lower().endswith('/v1'):
+        return f'{cleaned}/models'
+    return 'https://api.anthropic.com/v1/models'
+
+
+def fetch_anthropic_available_models(messages_endpoint: str, token: str) -> list[str]:
+    if not token.strip():
+        return []
+
+    request = urllib.request.Request(
+        _anthropic_models_endpoint(messages_endpoint),
+        headers={
+            'x-api-key': token,
+            'anthropic-version': '2023-06-01',
+        },
+        method='GET',
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            payload = json.loads(response.read().decode('utf-8'))
+    except Exception:
+        return []
+
+    data = payload.get('data')
+    if not isinstance(data, list):
+        return []
+
+    model_ids: list[str] = []
+    for item in data:
+        if isinstance(item, dict):
+            model_id = str(item.get('id', '')).strip()
+            if model_id:
+                model_ids.append(model_id)
+
+    return model_ids
 
 
 def validate_read_only_sql(sql: str) -> str:
@@ -725,6 +787,26 @@ def call_llm(
         )
         if detail:
             message = f'{message} response={detail}'
+
+        # Anthropic model-not-found diagnostics: include currently available model IDs.
+        if provider == 'anthropic' and error.code == 404 and detail:
+            try:
+                detail_payload = json.loads(detail)
+            except json.JSONDecodeError:
+                detail_payload = {}
+
+            if isinstance(detail_payload, dict):
+                error_block = detail_payload.get('error')
+                if isinstance(error_block, dict):
+                    error_type = str(error_block.get('type', '')).strip()
+                    error_message = str(error_block.get('message', '')).strip().lower()
+                    if error_type == 'not_found_error' and error_message.startswith('model:'):
+                        available_models = fetch_anthropic_available_models(endpoint, token)
+                        if available_models:
+                            preview = ', '.join(available_models[:10])
+                            message = f'{message} available_models={preview}'
+                        else:
+                            message = f'{message} available_models=(unable to fetch)'
         raise SuspiciousOperation(message)
     except urllib.error.URLError as error:
         raise SuspiciousOperation(f'LLM connection failed: {error.reason}')

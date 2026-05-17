@@ -194,13 +194,20 @@ def settings_view(request: HttpRequest) -> JsonResponse:
 def settings_test_view(request: HttpRequest) -> JsonResponse:
 	try:
 		payload = json.loads(request.body or '{}')
+		stored_settings = load_settings()
+		incoming_endpoint = str(payload.get('endpoint', '')).strip()
+		incoming_model = str(payload.get('model', '')).strip()
+		incoming_token = str(payload.get('token', '')).strip()
+
 		settings_data = {
-			'endpoint': str(payload.get('endpoint', '')).strip(),
-			'token': str(payload.get('token', '')).strip(),
-			'model': str(payload.get('model', '')).strip(),
+			'endpoint': incoming_endpoint or stored_settings.get('endpoint', ''),
+			'model': incoming_model or stored_settings.get('model', ''),
+			'token': stored_settings.get('token', ''),
 		}
-		if not settings_data['endpoint'] or not settings_data['model']:
-			settings_data = load_settings()
+
+		# UI에서 마스킹 토큰("***")이 다시 전달될 수 있어 실제 토큰을 덮어쓰지 않도록 보호.
+		if incoming_token and incoming_token != '***':
+			settings_data['token'] = incoming_token
 
 		result = call_llm(
 			settings_data,
@@ -211,6 +218,9 @@ def settings_test_view(request: HttpRequest) -> JsonResponse:
 				'previews': [],
 			},
 		)
+
+		# 연결 테스트 성공 시 현재 값 자동 저장 (Chat에서 동일 설정 즉시 사용).
+		save_settings(settings_data)
 		return JsonResponse({'ok': True, 'provider': result['provider']})
 	except (json.JSONDecodeError, OSError, sqlite3.Error, SuspiciousOperation) as error:
 		return _json_error(str(error))

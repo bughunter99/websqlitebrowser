@@ -1,5 +1,5 @@
 {
-  "endpoint": "http://127.0.0.1:11434/v1",
-  "token": "",
-  "model": "tinyllama:latest"
+  "endpoint": "https://api.anthropic.com/v1/messages",
+  "token": "FwFMDwkbAAgeGlVQWCEEaGRVczQkcyYGZTppBnAQWkpWJyckC1p/XBsGSFstNDZbSnBBM0VuAyFlGF4KViRQXR4zFAkkWRgQWRUREyA6L0ZiHnZbAE9NE3UYDjJzVHcfBz0WQykFRjsGMiQi",
+  "model": "claude-haiku-4-5-20251001"
 }
