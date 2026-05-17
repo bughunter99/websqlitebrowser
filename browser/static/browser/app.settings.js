@@ -9,6 +9,9 @@ async function loadSettings() {
         document.getElementById('llm-endpoint').value = data.settings.endpoint || '';
         document.getElementById('llm-token').value = data.settings.token || '';
         document.getElementById('llm-model').value = data.settings.model || '';
+        document.getElementById('sqlite-folder-system').value = data.settings.system_folder || 'system';
+        document.getElementById('sqlite-folder-current').value = data.settings.current_folder || 'current';
+        document.getElementById('sqlite-folder-hist').value = data.settings.hist_folder || 'hist';
         document.getElementById('settings-status').textContent = '서버 설정을 불러왔습니다.';
     } catch (error) {
         document.getElementById('settings-status').textContent = error.message;
@@ -25,6 +28,9 @@ async function testSettingsConnection() {
             endpoint: document.getElementById('llm-endpoint').value,
             token: document.getElementById('llm-token').value,
             model: document.getElementById('llm-model').value,
+            system_folder: document.getElementById('sqlite-folder-system').value,
+            current_folder: document.getElementById('sqlite-folder-current').value,
+            hist_folder: document.getElementById('sqlite-folder-hist').value,
         };
         outputLog(`SETTINGS TEST REQUEST endpoint=${payload.endpoint || '(empty)'} model=${payload.model || '(empty)'} token=${payload.token ? '[set]' : '[empty]'}`);
         const data = await requestJson('/api/settings/test/', {
@@ -67,6 +73,9 @@ function wireSettingsPanel() {
                     endpoint: /** @type {HTMLInputElement} */ (document.getElementById('llm-endpoint')).value,
                     token: /** @type {HTMLInputElement} */ (document.getElementById('llm-token')).value,
                     model: /** @type {HTMLInputElement} */ (document.getElementById('llm-model')).value,
+                    system_folder: /** @type {HTMLInputElement} */ (document.getElementById('sqlite-folder-system')).value,
+                    current_folder: /** @type {HTMLInputElement} */ (document.getElementById('sqlite-folder-current')).value,
+                    hist_folder: /** @type {HTMLInputElement} */ (document.getElementById('sqlite-folder-hist')).value,
                 }),
             });
             status.textContent = '서버에 설정을 저장했습니다.';

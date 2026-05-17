@@ -300,6 +300,38 @@
             color: #1a1a1a;
         }
 
+        .chat-answer-actions {
+            margin-top: 8px;
+            display: inline-flex;
+            gap: 4px;
+            align-items: center;
+        }
+
+        .chat-action-btn {
+            width: 20px;
+            height: 20px;
+            border: 1px solid #b6b6b6;
+            background: #efefef;
+            color: #234c86;
+            border-radius: 3px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .chat-action-btn:hover {
+            background: #e4edf9;
+            border-color: #7fa8d8;
+        }
+
+        .chat-action-btn.is-active {
+            background: #d7e8ff;
+            border-color: #5d8fce;
+            color: #163a66;
+        }
+
         .chat-detail-wrap {
             margin-top: 4px;
             display: grid;
@@ -366,6 +398,46 @@
         .chat-query-error {
             margin-top: 10px;
         }
+
+        .chat-choice-wrap {
+            margin-top: 8px;
+        }
+
+        .chat-choice-timeout {
+            margin-top: 4px;
+            color: #2e4d7c;
+            font-size: 11px;
+        }
+
+        .chat-choice-list {
+            margin-top: 6px;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 4px;
+        }
+
+        .chat-choice-button {
+            width: 100%;
+            text-align: left;
+            padding: 4px 8px;
+            font-size: 11px;
+            min-height: 24px;
+            border: 1px solid #b6b6b6;
+            background: #efefef;
+            color: #1a1a1a;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        .chat-choice-button:hover {
+            background: #e4edf9;
+            border-color: #7fa8d8;
+        }
+
+        .chat-choice-button:disabled {
+            opacity: 0.65;
+            cursor: default;
+        }
         
         .chat-composer {
             display: grid;
@@ -373,11 +445,47 @@
             gap: 4px;
             align-items: end;
         }
+
+        .chat-input-wrap {
+            position: relative;
+            display: flex;
+            border-radius: 3px;
+        }
+
+        .chat-input-orbit {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            opacity: 0;
+            z-index: 1;
+        }
+
+        .chat-input-orbit rect {
+            fill: none;
+            stroke: #2a72d4;
+            stroke-width: 1.2;
+            stroke-linecap: round;
+            stroke-dasharray: 95 405;
+            stroke-dashoffset: 0;
+        }
         
         .chat-composer textarea {
+            width: 100%;
             min-height: 58px;
             max-height: 120px;
             resize: vertical;
+            position: relative;
+            z-index: 0;
+        }
+
+        .chat-composer.is-pending .chat-input-orbit {
+            opacity: 1;
+        }
+
+        .chat-composer.is-pending .chat-input-orbit rect {
+            animation: chatBorderOrbit 1.625s linear infinite;
         }
         
         .chat-send-mini {
@@ -391,17 +499,33 @@
             font-size: 0.8rem;
             font-weight: 700;
             line-height: 1;
+            transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
         }
 
-        .chat-send-mini.is-pending,
-        .chat-send-mini:disabled {
-            opacity: 0.7;
-            cursor: default;
+        .chat-send-mini.is-pending {
+            background: #274f8d;
+            border-color: #1d3763;
+            color: #ffffff;
+            cursor: pointer;
+        }
+
+        .chat-send-mini.is-pending:hover {
+            background: #2f5c9f;
+            border-color: #234879;
         }
 
         .chat-composer textarea:disabled {
             background: #e8e7e3;
             color: #555555;
+        }
+
+        @keyframes chatBorderOrbit {
+            from {
+                stroke-dashoffset: 0;
+            }
+            to {
+                stroke-dashoffset: -500;
+            }
         }
 
         .panel.active {

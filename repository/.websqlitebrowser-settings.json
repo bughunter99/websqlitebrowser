@@ -1,5 +1,8 @@
 {
   "endpoint": "https://api.anthropic.com/v1/messages",
   "token": "FwFMDwkbAAgeGlVQWCEEaGRVczQkcyYGZTppBnAQWkpWJyckC1p/XBsGSFstNDZbSnBBM0VuAyFlGF4KViRQXR4zFAkkWRgQWRUREyA6L0ZiHnZbAE9NE3UYDjJzVHcfBz0WQykFRjsGMiQi",
-  "model": "claude-haiku-4-5-20251001"
+  "model": "claude-haiku-4-5-20251001",
+  "system_folder": "system",
+  "current_folder": "current",
+  "hist_folder": "hist"
 }

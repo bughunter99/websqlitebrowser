@@ -12,6 +12,7 @@ from .services import (
 	DEFAULT_ROW_LIMIT,
 	build_chat_context,
 	build_folder_chat_context,
+	build_multi_folder_chat_context,
 	call_llm,
 	summarize_chat_context,
 	directory_stats,
@@ -205,6 +206,9 @@ def settings_test_view(request: HttpRequest) -> JsonResponse:
 			'endpoint': incoming_endpoint or stored_settings.get('endpoint', ''),
 			'model': incoming_model or stored_settings.get('model', ''),
 			'token': stored_settings.get('token', ''),
+			'system_folder': str(payload.get('system_folder', '')).strip() or stored_settings.get('system_folder', 'system'),
+			'current_folder': str(payload.get('current_folder', '')).strip() or stored_settings.get('current_folder', 'current'),
+			'hist_folder': str(payload.get('hist_folder', '')).strip() or stored_settings.get('hist_folder', 'hist'),
 		}
 
 		# UI에서 마스킹 토큰("***")이 다시 전달될 수 있어 실제 토큰을 덮어쓰지 않도록 보호.
@@ -242,6 +246,7 @@ def chat_view(request: HttpRequest) -> JsonResponse:
 
 		database_path = None
 		folder_path = None
+		settings_data = load_settings()
 
 		if relative_path:
 			candidate = resolve_repo_path(relative_path)
@@ -257,24 +262,48 @@ def chat_view(request: HttpRequest) -> JsonResponse:
 			trace.append(f'select single database path={relative_to_root(database_path)}')
 			context = build_chat_context(database_path, question)
 			trace.append('load table/schema/sample/metadata context for single database')
-			response = call_llm(load_settings(), question, context, database_path)
+			response = call_llm(settings_data, question, context, database_path)
 			response['database'] = {
 				'name': database_path.name,
 				'path': relative_to_root(database_path),
 			}
 		else:
-			if folder_path is None or not folder_path.exists() or not folder_path.is_dir():
-				raise SuspiciousOperation('Current folder is not available for chat context.')
+			configured_slots: list[tuple[str, object]] = [
+				('system', settings_data.get('system_folder', 'system')),
+				('current', settings_data.get('current_folder', 'current')),
+				('hist', settings_data.get('hist_folder', 'hist')),
+			]
 
-			trace.append(f'select folder context path={relative_to_root(folder_path)}')
-			context = build_folder_chat_context(folder_path, question)
+			resolved_slots: list[tuple[str, object]] = []
+			for slot_name, raw_path in configured_slots:
+				try:
+					candidate = resolve_repo_path(str(raw_path))
+				except SuspiciousOperation:
+					trace.append(f'skip configured folder slot={slot_name} path={str(raw_path)} (invalid)')
+					continue
+
+				if candidate.exists() and candidate.is_dir():
+					resolved_slots.append((slot_name, candidate))
+					trace.append(f'use configured folder slot={slot_name} path={relative_to_root(candidate)}')
+				else:
+					trace.append(f'skip configured folder slot={slot_name} path={str(raw_path)} (not found)')
+
+			if resolved_slots:
+				context = build_multi_folder_chat_context(resolved_slots, question)
+			else:
+				if folder_path is None or not folder_path.exists() or not folder_path.is_dir():
+					raise SuspiciousOperation('Current folder is not available for chat context.')
+
+				trace.append(f'select fallback explorer folder path={relative_to_root(folder_path)}')
+				context = build_folder_chat_context(folder_path, question)
+
 			if not context.get('database_count'):
-				raise SuspiciousOperation('No SQLite files found in current folder.')
-			trace.append(f"scan sqlite files in folder db_count={int(context.get('database_count', 0))}")
+				raise SuspiciousOperation('No SQLite files found in configured folders.')
+			trace.append(f"scan sqlite files in folder context db_count={int(context.get('database_count', 0))}")
 
-			response = call_llm(load_settings(), question, context, None)
+			response = call_llm(settings_data, question, context, None, folder_path)
 			response['folder'] = {
-				'path': relative_to_root(folder_path),
+				'path': str(context.get('folder', relative_to_root(folder_path) if folder_path else 'configured-folders')),
 				'database_count': int(context.get('database_count', 0)),
 				'database_list_truncated': bool(context.get('database_list_truncated', False)),
 			}

@@ -38,6 +38,16 @@ function asJsonObject(value) {
  */
 async function requestJson(url, options = {}, retryCount = 0) {
     const controller = new AbortController();
+    const externalSignal = options && options.signal instanceof AbortSignal ? options.signal : null;
+    let onExternalAbort = null;
+    if (externalSignal) {
+        if (externalSignal.aborted) {
+            controller.abort();
+        } else {
+            onExternalAbort = () => controller.abort();
+            externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+        }
+    }
     const startTime = Date.now();
     const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
     
@@ -83,9 +93,17 @@ async function requestJson(url, options = {}, retryCount = 0) {
     } catch (error) {
         clearTimeout(timeoutId);
         const duration = Date.now() - startTime;
+        if (onExternalAbort && externalSignal) {
+            externalSignal.removeEventListener('abort', onExternalAbort);
+        }
         
         // 타임아웃 에러
         if (error instanceof DOMException && error.name === 'AbortError') {
+            if (externalSignal && externalSignal.aborted) {
+                const abortedError = new Error('요청이 취소되었습니다.');
+                abortedError.code = 'ABORTED';
+                throw abortedError;
+            }
             performanceMetrics.recordRequest(url, duration, 0, retryCount);
             if (retryCount < API_CONFIG.maxRetries) {
                 const delay = API_CONFIG.retryDelay * Math.pow(2, retryCount);
@@ -113,5 +131,9 @@ async function requestJson(url, options = {}, retryCount = 0) {
         }
 
         throw error;
+    } finally {
+        if (onExternalAbort && externalSignal) {
+            externalSignal.removeEventListener('abort', onExternalAbort);
+        }
     }
 }

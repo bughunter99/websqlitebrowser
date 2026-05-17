@@ -19,6 +19,9 @@ DEFAULT_SAMPLE_LIMIT = 3
 SETTINGS_FILENAME = '.websqlitebrowser-settings.json'
 DEFAULT_LLM_ENDPOINT = 'https://api.anthropic.com/v1/messages'
 DEFAULT_LLM_MODEL = 'claude-haiku-4-5-20251001'
+DEFAULT_SYSTEM_FOLDER = 'system'
+DEFAULT_CURRENT_FOLDER = 'current'
+DEFAULT_HIST_FOLDER = 'hist'
 METADATA_MAX_DOCS = 12
 METADATA_MAX_CHARS_PER_DOC = 5000
 FOLDER_CHAT_MAX_DATABASES = 8
@@ -30,6 +33,19 @@ LEGACY_DEFAULT_LLM_ENDPOINTS = {
 ORACLE_ROWNUM_PATTERN = re.compile(r'(?is)\s+(where|and)\s+rownum\s*(<|<=)\s*(\d+)\s*$')
 FENCED_SQL_PATTERN = re.compile(r'```(?:sql)?\s*(.*?)```', re.IGNORECASE | re.DOTALL)
 FENCED_JSON_PATTERN = re.compile(r'```(?:json)?\s*(\{.*?\})\s*```', re.IGNORECASE | re.DOTALL)
+AMBIGUOUS_ANSWER_MARKERS = (
+    '필요합니다',
+    '명시',
+    '불명확',
+    '제약',
+    '추가 정보',
+    '정확한 분석',
+    '정확한 계산',
+)
+CLARIFICATION_SELECTED_MARKERS = (
+    '기준 선택:',
+    'WARN 이전/이후 기준과 계산식',
+)
 
 
 def repository_root() -> Path:
@@ -236,6 +252,9 @@ def load_settings() -> dict[str, str]:
             'endpoint': DEFAULT_LLM_ENDPOINT,
             'token': '',
             'model': DEFAULT_LLM_MODEL,
+            'system_folder': DEFAULT_SYSTEM_FOLDER,
+            'current_folder': DEFAULT_CURRENT_FOLDER,
+            'hist_folder': DEFAULT_HIST_FOLDER,
         }
 
     with path.open('r', encoding='utf-8') as handle:
@@ -243,6 +262,9 @@ def load_settings() -> dict[str, str]:
 
     endpoint = str(data.get('endpoint', DEFAULT_LLM_ENDPOINT)).strip() or DEFAULT_LLM_ENDPOINT
     model = str(data.get('model', DEFAULT_LLM_MODEL)).strip() or DEFAULT_LLM_MODEL
+    system_folder = str(data.get('system_folder', DEFAULT_SYSTEM_FOLDER)).strip() or DEFAULT_SYSTEM_FOLDER
+    current_folder = str(data.get('current_folder', DEFAULT_CURRENT_FOLDER)).strip() or DEFAULT_CURRENT_FOLDER
+    hist_folder = str(data.get('hist_folder', DEFAULT_HIST_FOLDER)).strip() or DEFAULT_HIST_FOLDER
 
     # One-time migration for previous local Ollama defaults.
     if endpoint in LEGACY_DEFAULT_LLM_ENDPOINTS:
@@ -260,16 +282,31 @@ def load_settings() -> dict[str, str]:
         'endpoint': endpoint,
         'token': _decrypt_token(str(data.get('token', ''))),
         'model': model,
+        'system_folder': system_folder,
+        'current_folder': current_folder,
+        'hist_folder': hist_folder,
     }
 
 
 def save_settings(payload: dict[str, object]) -> dict[str, str]:
     endpoint = str(payload.get('endpoint', '')).strip() or DEFAULT_LLM_ENDPOINT
     model = str(payload.get('model', '')).strip() or DEFAULT_LLM_MODEL
+    system_folder = str(payload.get('system_folder', '')).strip() or DEFAULT_SYSTEM_FOLDER
+    current_folder = str(payload.get('current_folder', '')).strip() or DEFAULT_CURRENT_FOLDER
+    hist_folder = str(payload.get('hist_folder', '')).strip() or DEFAULT_HIST_FOLDER
+
+    # 저장 전 경로 정규화 검증 (repository 기준 상대경로 또는 허용 범위 절대경로)
+    resolve_repo_path(system_folder)
+    resolve_repo_path(current_folder)
+    resolve_repo_path(hist_folder)
+
     data = {
         'endpoint': endpoint,
         'token': _encrypt_token(str(payload.get('token', '')).strip()),
         'model': model,
+        'system_folder': system_folder,
+        'current_folder': current_folder,
+        'hist_folder': hist_folder,
     }
     path = settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -283,6 +320,9 @@ def save_settings(payload: dict[str, object]) -> dict[str, str]:
         'endpoint': data['endpoint'],
         'token': '***' if data['token'] else '',
         'model': data['model'],
+        'system_folder': data['system_folder'],
+        'current_folder': data['current_folder'],
+        'hist_folder': data['hist_folder'],
     }
 
 
@@ -422,11 +462,26 @@ def _match_table_names_from_question(tables: list[dict[str, object]], question: 
     return matched
 
 
+def _make_database_alias(db_path: Path, used_aliases: set[str]) -> str:
+    base = re.sub(r'[^a-zA-Z0-9_]', '_', db_path.stem.strip().lower())
+    if not base or not re.match(r'^[a-zA-Z_]', base):
+        base = f'db_{base}' if base else 'db'
+
+    alias = base
+    sequence = 2
+    while alias in used_aliases:
+        alias = f'{base}_{sequence}'
+        sequence += 1
+
+    used_aliases.add(alias)
+    return alias
+
+
 def list_sqlite_files_in_directory(folder_path: Path, max_files: int = FOLDER_CHAT_MAX_DATABASES) -> tuple[list[Path], bool]:
     try:
         files = [
             child
-            for child in sorted(folder_path.iterdir(), key=lambda p: p.name.lower())
+            for child in sorted(folder_path.rglob('*'), key=lambda p: str(p.relative_to(folder_path)).lower())
             if is_sqlite_file(child)
         ]
     except OSError:
@@ -454,8 +509,10 @@ def slim_table_for_chat(table: dict[str, object]) -> dict[str, object]:
 def build_folder_chat_context(folder_path: Path, question: str = '') -> dict[str, object]:
     sqlite_files, truncated = list_sqlite_files_in_directory(folder_path)
     databases: list[dict[str, object]] = []
+    used_aliases: set[str] = set()
 
     for db_path in sqlite_files:
+        alias = _make_database_alias(db_path, used_aliases)
         try:
             tables = fetch_tables(db_path)
             slim_tables = [slim_table_for_chat(table) for table in tables]
@@ -475,6 +532,7 @@ def build_folder_chat_context(folder_path: Path, question: str = '') -> dict[str
 
             databases.append(
                 {
+                    'alias': alias,
                     'database': db_path.name,
                     'path': relative_to_root(db_path),
                     'tables': slim_tables,
@@ -485,6 +543,7 @@ def build_folder_chat_context(folder_path: Path, question: str = '') -> dict[str
         except (OSError, sqlite3.Error):
             databases.append(
                 {
+                    'alias': alias,
                     'database': db_path.name,
                     'path': relative_to_root(db_path),
                     'error': 'Failed to inspect database.',
@@ -498,7 +557,81 @@ def build_folder_chat_context(folder_path: Path, question: str = '') -> dict[str
         'database_list_truncated': truncated,
         'databases': databases,
         'guidance': {
-            'note': 'When multiple databases are provided, identify target database explicitly before generating SQL.',
+            'note': 'When multiple databases are provided, prefer explicit database alias in SQL (e.g. sales.customers, marketing.orders).',
+        },
+    }
+
+
+def build_multi_folder_chat_context(folder_slots: list[tuple[str, Path]], question: str = '') -> dict[str, object]:
+    databases: list[dict[str, object]] = []
+    used_aliases: set[str] = set()
+    groups: list[dict[str, object]] = []
+
+    for slot_name, folder_path in folder_slots:
+        sqlite_files, truncated = list_sqlite_files_in_directory(folder_path)
+        group_count_before = len(databases)
+
+        for db_path in sqlite_files:
+            alias = _make_database_alias(db_path, used_aliases)
+            try:
+                tables = fetch_tables(db_path)
+                slim_tables = [slim_table_for_chat(table) for table in tables]
+                previews = []
+                for table in tables[:FOLDER_CHAT_PREVIEW_TABLES_PER_DB]:
+                    table_name = str(table.get('name', '')).strip()
+                    if not table_name:
+                        continue
+                    previews.append(
+                        {
+                            'table': table_name,
+                            'rows': table_preview(db_path, table_name),
+                        }
+                    )
+
+                metadata_docs = load_metadata_documents(db_path, tables, question)
+
+                databases.append(
+                    {
+                        'alias': alias,
+                        'database': db_path.name,
+                        'path': relative_to_root(db_path),
+                        'folder_slot': slot_name,
+                        'folder_path': relative_to_root(folder_path),
+                        'tables': slim_tables,
+                        'previews': previews,
+                        'metadata_docs': metadata_docs,
+                    }
+                )
+            except (OSError, sqlite3.Error):
+                databases.append(
+                    {
+                        'alias': alias,
+                        'database': db_path.name,
+                        'path': relative_to_root(db_path),
+                        'folder_slot': slot_name,
+                        'folder_path': relative_to_root(folder_path),
+                        'error': 'Failed to inspect database.',
+                    }
+                )
+
+        groups.append(
+            {
+                'slot': slot_name,
+                'path': relative_to_root(folder_path),
+                'database_count': len(databases) - group_count_before,
+                'database_list_truncated': truncated,
+            }
+        )
+
+    return {
+        'mode': 'folder',
+        'folder': 'configured-folders',
+        'database_count': len(databases),
+        'database_list_truncated': any(bool(group.get('database_list_truncated')) for group in groups),
+        'database_groups': groups,
+        'databases': databases,
+        'guidance': {
+            'note': 'Databases come from configured folders: system/current/hist. Use alias.table for cross-database joins.',
         },
     }
 
@@ -610,6 +743,8 @@ def summarize_chat_context(context: dict[str, object]) -> dict[str, object]:
                 if not isinstance(item, dict):
                     continue
                 name = str(item.get('database', '')).strip()
+                alias = str(item.get('alias', '')).strip()
+                folder_slot = str(item.get('folder_slot', '')).strip()
                 path = str(item.get('path', '')).strip()
                 if not name:
                     continue
@@ -637,6 +772,8 @@ def summarize_chat_context(context: dict[str, object]) -> dict[str, object]:
                 database_items.append(
                     {
                         'name': name,
+                        'alias': alias,
+                        'folder_slot': folder_slot,
                         'path': path,
                         'table_count': table_count,
                         'metadata_sources': db_meta_sources,
@@ -901,6 +1038,68 @@ def run_read_only_query(database_path: Path, sql: str) -> dict[str, object]:
     }
 
 
+def run_read_only_query_across_databases(context: dict[str, object], sql: str) -> dict[str, object]:
+    statements = split_sql_statements(sql)
+    validated_statements = [
+        translate_oracle_rownum(validate_read_only_sql(statement))
+        for statement in statements
+    ]
+
+    databases = context.get('databases', [])
+    if not isinstance(databases, list) or not databases:
+        raise SuspiciousOperation('No databases available for folder-mode SQL execution.')
+
+    attach_targets: list[tuple[str, Path]] = []
+    used_aliases: set[str] = set()
+    for item in databases:
+        if not isinstance(item, dict):
+            continue
+        raw_path = str(item.get('path', '')).strip()
+        if not raw_path:
+            continue
+        db_path = resolve_repo_path(raw_path)
+        if not is_sqlite_file(db_path):
+            continue
+
+        raw_alias = str(item.get('alias', '')).strip().lower()
+        alias = re.sub(r'[^a-zA-Z0-9_]', '_', raw_alias)
+        if not alias or not re.match(r'^[a-zA-Z_]', alias):
+            alias = _make_database_alias(db_path, used_aliases)
+        elif alias in used_aliases:
+            alias = _make_database_alias(db_path, used_aliases)
+        else:
+            used_aliases.add(alias)
+
+        attach_targets.append((alias, db_path))
+
+    if not attach_targets:
+        raise SuspiciousOperation('No attachable SQLite databases found for folder-mode SQL execution.')
+
+    with sqlite3.connect(':memory:') as connection:
+        connection.row_factory = sqlite3.Row
+
+        for alias, db_path in attach_targets:
+            safe_alias = quote_identifier(alias)
+            connection.execute(f'ATTACH DATABASE ? AS "{safe_alias}"', (str(db_path),))
+
+        if len(validated_statements) == 1:
+            cursor = connection.execute(validated_statements[0])
+            return serialize_rows(cursor)
+
+        results: list[dict[str, object]] = []
+        for index, statement in enumerate(validated_statements, start=1):
+            cursor = connection.execute(statement)
+            payload = serialize_rows(cursor)
+            payload['statement_index'] = index
+            payload['statement_sql'] = statement
+            results.append(payload)
+
+        return {
+            'results': results,
+            'result_count': len(results),
+        }
+
+
 def extract_sql_from_text(text: str) -> str:
     cleaned = text.strip()
     json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
@@ -950,6 +1149,72 @@ def parse_llm_content(content: str) -> tuple[str, str]:
 
     # 3) Fallback: treat content as answer and extract SQL heuristically.
     return cleaned, extract_sql_from_text(cleaned)
+
+
+def build_clarification_options(
+    question: str,
+    context: dict[str, object],
+    answer: str,
+    suggested_sql: str,
+) -> list[dict[str, str]]:
+    if suggested_sql.strip():
+        return []
+
+    answer_text = answer.strip()
+    if not answer_text:
+        return []
+
+    is_ambiguous = any(marker in answer_text for marker in AMBIGUOUS_ANSWER_MARKERS)
+    if not is_ambiguous:
+        return []
+
+    mode = str(context.get('mode', '')).strip().lower()
+    if mode != 'folder':
+        return []
+
+    base_question = question.strip()
+    if not base_question:
+        return []
+
+    # 이미 사용자가 기준을 선택해 재질문한 경우, 선택지 루프를 막는다.
+    if any(marker in base_question for marker in CLARIFICATION_SELECTED_MARKERS):
+        return []
+
+    choice_specs = [
+        (
+            '가장 이른 WARN 시점 기준',
+            'system_status의 status="WARN" 중 가장 이른 시점을 기준으로, WARN 이전 30일 대비 이후 30일 주문건수 증가율을 계산',
+        ),
+        (
+            '가장 최근 WARN 시점 기준',
+            'system_status의 status="WARN" 중 가장 최근 시점을 기준으로, WARN 이전 30일 대비 이후 30일 주문건수 증가율을 계산',
+        ),
+        (
+            '서비스코드별 WARN 시점 기준',
+            'service_name별 WARN 발생 시점을 각각 적용해 고객별 증가율을 계산',
+        ),
+        (
+            '모든 WARN 이벤트 평균 기준',
+            '모든 WARN 이벤트를 기준으로 증가율을 각각 구한 뒤 고객별 평균 증가율을 계산',
+        ),
+    ]
+
+    options: list[dict[str, str]] = []
+    for index, (label, rule) in enumerate(choice_specs, start=1):
+        prompt = (
+            f'{base_question}\n'
+            f'기준 선택: {rule}.\n'
+            'WARN 이전/이후 기준과 계산식(분모 0 처리 포함)을 답변에 명시하고, 가능한 경우 SQL도 함께 제시해줘.'
+        )
+        options.append(
+            {
+                'id': f'clarify-{index}',
+                'label': label,
+                'prompt': prompt,
+            }
+        )
+
+    return options
 
 
 def mask_sensitive_info(content: str, database_path: Path | None = None) -> str:
@@ -1012,6 +1277,7 @@ def call_llm(
     question: str,
     context: dict[str, object],
     database_path: Path | None = None,
+    folder_path: Path | None = None,
 ) -> dict[str, object]:
     endpoint = normalise_chat_endpoint(settings_data.get('endpoint', ''))
     if not endpoint:
@@ -1051,6 +1317,8 @@ def call_llm(
         'Return exactly one JSON object with keys "answer" and "sql". '
         'The "answer" value must be Korean plain text. '
         'The "sql" value must be either an empty string or a read-only SQLite SQL statement. '
+        'When context.mode is "folder", use explicit database aliases from context.databases[].alias '
+        'and table notation alias.table_name for cross-database joins. '
         'Do not include markdown, code fences, or additional keys.'
     )
     user_prompt = json.dumps(
@@ -1186,6 +1454,10 @@ def call_llm(
     if not answer:
         answer = message
 
+    clarification_options = build_clarification_options(question, context, answer, suggested_sql)
+    if clarification_options:
+        trace.append(f'generate clarification choices count={len(clarification_options)}')
+
     # 응답에서 민감 정보 마스킹
     masked_answer = mask_sensitive_info(answer, database_path)
 
@@ -1204,14 +1476,29 @@ def call_llm(
         except (OSError, sqlite3.Error, SuspiciousOperation) as error:
             query_result = {'error': str(error)}
             trace.append(f'sql execution failed error={str(error)}')
+    elif suggested_sql and mode == 'folder':
+        trace.append('execute suggested sql in folder mode (attached multi-database)')
+        try:
+            query_result = run_read_only_query_across_databases(context, suggested_sql)
+            if isinstance(query_result, dict) and isinstance(query_result.get('results'), list):
+                trace.append(f"folder sql execution success statements={len(query_result.get('results', []))}")
+            else:
+                row_count = 0
+                if isinstance(query_result, dict):
+                    row_count = int(query_result.get('row_count', 0))
+                trace.append(f'folder sql execution success rows={row_count}')
+        except (OSError, sqlite3.Error, SuspiciousOperation) as error:
+            query_result = {'error': str(error)}
+            trace.append(f'folder sql execution failed error={str(error)}')
     elif suggested_sql:
-        trace.append('sql suggested but execution skipped (folder mode)')
+        trace.append('sql suggested but execution skipped (missing execution context)')
     else:
         trace.append('no sql suggested by llm')
 
     return {
         'answer': masked_answer,
         'suggested_sql': suggested_sql,
+        'clarification_options': clarification_options,
         'query_result': query_result,
         'provider': provider,
         'trace': trace,

@@ -41,7 +41,7 @@ function renderExplorer(treeData) {
         return `
             <div class="explorer-row${selectedClass}${parentClass}" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.type)}" data-is-sqlite="${entry.is_sqlite ? '1' : '0'}">
                 <div class="explorer-name-col">
-                    <span class="explorer-name">${highlightExplorerName(entry.name, state.explorerFilter)}</span>
+                    <span class="explorer-name" title="${escapeHtml(entry.name || '')}">${highlightExplorerName(entry.name, state.explorerFilter)}</span>
                 </div>
                 <div class="explorer-size">${escapeHtml(sizeText)}</div>
                 <div class="explorer-modified">${escapeHtml(entry.modified_at || '')}</div>
