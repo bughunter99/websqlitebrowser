@@ -26,15 +26,18 @@ async function testSettingsConnection() {
             token: document.getElementById('llm-token').value,
             model: document.getElementById('llm-model').value,
         };
+        outputLog(`SETTINGS TEST REQUEST endpoint=${payload.endpoint || '(empty)'} model=${payload.model || '(empty)'} token=${payload.token ? '[set]' : '[empty]'}`);
         const data = await requestJson('/api/settings/test/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
         });
+        outputLog(`SETTINGS TEST RESPONSE ok=true provider=${data.provider || 'unknown'}`);
         status.textContent = `연결 성공: ${data.provider}`;
     } catch (error) {
         status.className = 'status-box error';
         status.textContent = error.message;
+        outputLog(`SETTINGS TEST ERROR ${error?.message || String(error)}`, 'error');
     }
 }
 

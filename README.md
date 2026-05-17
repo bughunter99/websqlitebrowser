@@ -4,6 +4,13 @@
 
 - 구현 반영 내역: [doc/implementation-update-20260516.md](doc/implementation-update-20260516.md)
 
+## 진행 메모 (2026-05-17)
+
+- Anthropic Claude 연결 시 `404 not_found` 이슈를 수정했다.
+- 원인: OpenAI 호환 엔드포인트(`/chat/completions`)를 강제로 붙이던 로직이 Anthropic `/v1/messages` 주소와 충돌.
+- 조치: Anthropic 엔드포인트 감지 후 `/v1/messages` 형식으로 유지하고, 헤더/페이로드/응답 파싱을 Anthropic 규격으로 분기 처리.
+- 기본 LLM 설정값을 Anthropic(`https://api.anthropic.com/v1/messages`, `claude-3-5-haiku-20241022`)로 고정하고, 실패 시 Output에 요청 요약/응답 본문이 남도록 디버그 로그를 강화했다.
+
 ## 원본 요구사항 메모
 
 여기 web으로 sqlite를 브라우징하는 앱을 만들꺼야. 윈도우나 리눅스에서 실행할꺼고,
@@ -366,6 +373,11 @@ directory_stats() 함수에서 현재 디렉토리의 모든 하위 디렉토리
 윈도우에서 보니까 data explorer에서 폴더 파일 리스트의 크기가 작던데,
 1.5배 크게 해줘. 폰에서는 그대로 해주고.
 
+
+내가 **“로컬 repository 아래 SQLite 파일들을 안전하게 브라우징하고, SQL/스키마 조회 및 LLM 질의까지 한 화면에서 처리하는 웹 SQL Navigator”**를 구현한 프로젝트를 만들었는데, 여기 chat 기능이 있어. setting에 llm 서버를 설정하고 질문하면 여기 chat에서 현재 디렉토리의 sqlite 파일을 읽어서 그거에 대한 답을 해주게 하고 싶거든. 그런데 클로드를 그 llm 서버로 하고 싶은데, llm 서버 주소, 토큰, 모델명을 입력해야되는데 어디서 가져와서 하는지 모르겠어. 일단 클로드를 무료로 가입하긴 했어.
+
+
+https://console.anthropic.com
 
 
 

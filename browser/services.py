@@ -17,6 +17,8 @@ READ_ONLY_PREFIXES = ('select', 'with', 'pragma', 'explain')
 DEFAULT_ROW_LIMIT = 100
 DEFAULT_SAMPLE_LIMIT = 3
 SETTINGS_FILENAME = '.websqlitebrowser-settings.json'
+DEFAULT_LLM_ENDPOINT = 'https://api.anthropic.com/v1/messages'
+DEFAULT_LLM_MODEL = 'claude-3-5-haiku-20241022'
 ORACLE_ROWNUM_PATTERN = re.compile(r'(?is)\s+(where|and)\s+rownum\s*(<|<=)\s*(\d+)\s*$')
 FENCED_SQL_PATTERN = re.compile(r'```(?:sql)?\s*(.*?)```', re.IGNORECASE | re.DOTALL)
 FENCED_JSON_PATTERN = re.compile(r'```(?:json)?\s*(\{.*?\})\s*```', re.IGNORECASE | re.DOTALL)
@@ -125,9 +127,12 @@ def directory_stats(current_path: Path) -> dict[str, object]:
         for child in current_path.iterdir():
             try:
                 # 심볼릭 링크 추적 안 함
-                if child.is_dir(follow_symlinks=False):
+                if child.is_symlink():
+                    continue
+
+                if child.is_dir():
                     directories += 1
-                elif child.is_file(follow_symlinks=False):
+                elif child.is_file():
                     files += 1
                     try:
                         total_size_bytes += child.stat().st_size
@@ -219,23 +224,29 @@ def _decrypt_token(encrypted: str) -> str:
 def load_settings() -> dict[str, str]:
     path = settings_path()
     if not path.exists():
-        return {'endpoint': '', 'token': '', 'model': ''}
+        return {
+            'endpoint': DEFAULT_LLM_ENDPOINT,
+            'token': '',
+            'model': DEFAULT_LLM_MODEL,
+        }
 
     with path.open('r', encoding='utf-8') as handle:
         data = json.load(handle)
 
     return {
-        'endpoint': str(data.get('endpoint', '')),
+        'endpoint': str(data.get('endpoint', DEFAULT_LLM_ENDPOINT)).strip() or DEFAULT_LLM_ENDPOINT,
         'token': _decrypt_token(str(data.get('token', ''))),
-        'model': str(data.get('model', '')),
+        'model': str(data.get('model', DEFAULT_LLM_MODEL)).strip() or DEFAULT_LLM_MODEL,
     }
 
 
 def save_settings(payload: dict[str, object]) -> dict[str, str]:
+    endpoint = str(payload.get('endpoint', '')).strip() or DEFAULT_LLM_ENDPOINT
+    model = str(payload.get('model', '')).strip() or DEFAULT_LLM_MODEL
     data = {
-        'endpoint': str(payload.get('endpoint', '')).strip(),
+        'endpoint': endpoint,
         'token': _encrypt_token(str(payload.get('token', '')).strip()),
-        'model': str(payload.get('model', '')).strip(),
+        'model': model,
     }
     path = settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -367,9 +378,23 @@ def normalise_chat_endpoint(endpoint: str) -> str:
     cleaned = endpoint.strip().rstrip('/')
     if not cleaned:
         return cleaned
+    lower = cleaned.lower()
+    if 'api.anthropic.com' in lower:
+        if lower.endswith('/messages'):
+            return cleaned
+        if lower.endswith('/v1'):
+            return f'{cleaned}/messages'
+        return cleaned
     if cleaned.endswith('/chat/completions'):
         return cleaned
     return f'{cleaned}/chat/completions'
+
+
+def detect_llm_provider(endpoint: str) -> str:
+    lower = endpoint.lower()
+    if 'api.anthropic.com' in lower or lower.endswith('/messages'):
+        return 'anthropic'
+    return 'openai-compatible'
 
 
 def validate_read_only_sql(sql: str) -> str:
@@ -622,6 +647,7 @@ def call_llm(
     endpoint = normalise_chat_endpoint(settings_data.get('endpoint', ''))
     if not endpoint:
         raise SuspiciousOperation('LLM endpoint is required.')
+    provider = detect_llm_provider(endpoint)
 
     model = settings_data.get('model', '').strip()
     if not model:
@@ -644,20 +670,35 @@ def call_llm(
         ensure_ascii=False,
         indent=2,
     )
-    payload = {
-        'model': model,
-        'messages': [
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': user_prompt},
-        ],
-        'temperature': 0.2,
-    }
     headers = {
         'Content-Type': 'application/json',
     }
     token = settings_data.get('token', '').strip()
-    if token:
-        headers['Authorization'] = f'Bearer {token}'
+    if provider == 'anthropic':
+        if not token:
+            raise SuspiciousOperation('Anthropic API key is required.')
+        headers['x-api-key'] = token
+        headers['anthropic-version'] = '2023-06-01'
+        payload = {
+            'model': model,
+            'max_tokens': 1024,
+            'temperature': 0.2,
+            'system': system_prompt,
+            'messages': [
+                {'role': 'user', 'content': user_prompt},
+            ],
+        }
+    else:
+        payload = {
+            'model': model,
+            'messages': [
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': user_prompt},
+            ],
+            'temperature': 0.2,
+        }
+        if token:
+            headers['Authorization'] = f'Bearer {token}'
 
     request = urllib.request.Request(
         endpoint,
@@ -671,23 +712,44 @@ def call_llm(
             response_payload = json.loads(response.read().decode('utf-8'))
     except urllib.error.HTTPError as error:
         detail = error.read().decode('utf-8', errors='ignore').strip()
-        message = f'LLM request failed with status {error.code}.'
+        request_summary = {
+            'provider': provider,
+            'endpoint': endpoint,
+            'method': 'POST',
+            'model': model,
+            'payload_keys': sorted(list(payload.keys())),
+        }
+        message = (
+            f'LLM request failed with status {error.code}. '
+            f'request={json.dumps(request_summary, ensure_ascii=False)}'
+        )
         if detail:
-            message = f'{message} {detail}'
+            message = f'{message} response={detail}'
         raise SuspiciousOperation(message)
     except urllib.error.URLError as error:
         raise SuspiciousOperation(f'LLM connection failed: {error.reason}')
 
-    choices = response_payload.get('choices') or []
     message = ''
-    if choices:
-        first_choice = choices[0]
-        if isinstance(first_choice, dict):
-            message_block = first_choice.get('message', {})
-            if isinstance(message_block, dict):
-                message = str(message_block.get('content', '')).strip()
-            if not message:
-                message = str(first_choice.get('text', '')).strip()
+    if provider == 'anthropic':
+        content_blocks = response_payload.get('content') or []
+        text_parts: list[str] = []
+        if isinstance(content_blocks, list):
+            for block in content_blocks:
+                if isinstance(block, dict) and block.get('type') == 'text':
+                    text_value = str(block.get('text', '')).strip()
+                    if text_value:
+                        text_parts.append(text_value)
+        message = '\n'.join(text_parts).strip()
+    else:
+        choices = response_payload.get('choices') or []
+        if choices:
+            first_choice = choices[0]
+            if isinstance(first_choice, dict):
+                message_block = first_choice.get('message', {})
+                if isinstance(message_block, dict):
+                    message = str(message_block.get('content', '')).strip()
+                if not message:
+                    message = str(first_choice.get('text', '')).strip()
 
     if not message:
         raise SuspiciousOperation('LLM response did not include a message.')
@@ -710,5 +772,5 @@ def call_llm(
         'answer': masked_answer,
         'suggested_sql': suggested_sql,
         'query_result': query_result,
-        'provider': 'openai-compatible',
+        'provider': provider,
     }
