@@ -32,6 +32,12 @@ async function testSettingsConnection() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
         });
+        if (data.llm_debug?.request) {
+            outputLog(`LLM TEST OUT ${data.llm_debug.request}`);
+        }
+        if (data.llm_debug?.response) {
+            outputLog(`LLM TEST IN ${data.llm_debug.response}`);
+        }
         outputLog(`SETTINGS TEST RESPONSE ok=true provider=${data.provider || 'unknown'}`);
         status.textContent = `연결 성공: ${data.provider}`;
     } catch (error) {

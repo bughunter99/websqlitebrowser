@@ -11,7 +11,9 @@ from django.views.decorators.http import require_GET, require_http_methods
 from .services import (
 	DEFAULT_ROW_LIMIT,
 	build_chat_context,
+	build_folder_chat_context,
 	call_llm,
+	summarize_chat_context,
 	directory_stats,
 	fetch_tables,
 	format_modified,
@@ -221,7 +223,7 @@ def settings_test_view(request: HttpRequest) -> JsonResponse:
 
 		# 연결 테스트 성공 시 현재 값 자동 저장 (Chat에서 동일 설정 즉시 사용).
 		save_settings(settings_data)
-		return JsonResponse({'ok': True, 'provider': result['provider']})
+		return JsonResponse({'ok': True, 'provider': result['provider'], 'llm_debug': result.get('llm_debug')})
 	except (json.JSONDecodeError, OSError, sqlite3.Error, SuspiciousOperation) as error:
 		return _json_error(str(error))
 
@@ -232,21 +234,58 @@ def chat_view(request: HttpRequest) -> JsonResponse:
 	try:
 		payload = json.loads(request.body or '{}')
 		relative_path = payload.get('path', '')
+		explorer_path = payload.get('explorer_path', '')
 		question = str(payload.get('message', '')).strip()
 		if not question:
 			raise SuspiciousOperation('Chat message is required.')
+		trace: list[str] = [f'receive chat request question_len={len(question)}']
 
-		database_path = resolve_repo_path(relative_path)
-		if not is_sqlite_file(database_path):
-			raise SuspiciousOperation('Selected file is not a SQLite database.')
+		database_path = None
+		folder_path = None
 
-		context = build_chat_context(database_path)
-		response = call_llm(load_settings(), question, context, database_path)
-		response['database'] = {
-			'name': database_path.name,
-			'path': relative_to_root(database_path),
-		}
+		if relative_path:
+			candidate = resolve_repo_path(relative_path)
+			if is_sqlite_file(candidate):
+				database_path = candidate
+			elif candidate.is_dir():
+				folder_path = candidate
+
+		if database_path is None and folder_path is None:
+			folder_path = resolve_repo_path(str(explorer_path or ''))
+
+		if database_path is not None:
+			trace.append(f'select single database path={relative_to_root(database_path)}')
+			context = build_chat_context(database_path, question)
+			trace.append('load table/schema/sample/metadata context for single database')
+			response = call_llm(load_settings(), question, context, database_path)
+			response['database'] = {
+				'name': database_path.name,
+				'path': relative_to_root(database_path),
+			}
+		else:
+			if folder_path is None or not folder_path.exists() or not folder_path.is_dir():
+				raise SuspiciousOperation('Current folder is not available for chat context.')
+
+			trace.append(f'select folder context path={relative_to_root(folder_path)}')
+			context = build_folder_chat_context(folder_path, question)
+			if not context.get('database_count'):
+				raise SuspiciousOperation('No SQLite files found in current folder.')
+			trace.append(f"scan sqlite files in folder db_count={int(context.get('database_count', 0))}")
+
+			response = call_llm(load_settings(), question, context, None)
+			response['folder'] = {
+				'path': relative_to_root(folder_path),
+				'database_count': int(context.get('database_count', 0)),
+				'database_list_truncated': bool(context.get('database_list_truncated', False)),
+			}
+
 		response['question'] = question
+		response['context_summary'] = summarize_chat_context(context)
+		llm_trace = response.get('trace', [])
+		if isinstance(llm_trace, list):
+			response['trace'] = trace + [str(item) for item in llm_trace]
+		else:
+			response['trace'] = trace
 		return JsonResponse(response)
 	except (json.JSONDecodeError, OSError, sqlite3.Error, SuspiciousOperation) as error:
 		return _json_error(str(error))

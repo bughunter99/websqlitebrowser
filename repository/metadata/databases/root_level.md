@@ -1,0 +1,19 @@
+﻿---
+scope: database/root_level
+priority: 3
+tags: [root_level, sqlite, domain]
+source_db: root_level.db
+---
+
+# root_level 데이터셋 메타
+
+## 목적
+- 이 문서는 root_level.db 데이터셋의 업무 맥락을 설명하기 위한 예시입니다.
+
+## 해석 가이드
+- 질의 응답 시 스키마 정보와 함께 이 문서의 정의를 우선 참고합니다.
+- 확신이 없는 해석은 단정하지 않고 "추정"으로 표시합니다.
+
+## 주의사항
+- 컬럼명만으로 의미를 단정하지 않습니다.
+- 코드값/상태값은 별도 테이블 문서 또는 skill 문서를 우선합니다.

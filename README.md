@@ -14,6 +14,21 @@
 - Anthropic에서 `model not_found`가 발생하면 `/v1/models`를 추가 조회해 현재 API 키로 사용 가능한 모델 목록을 에러 메시지에 함께 출력하도록 개선했다.
 - 기본 모델을 `claude-haiku-4-5-20251001`로 변경했다.
 - 연결 테스트 성공 시 설정값을 자동 저장하도록 바꿔 Chat이 같은 값을 즉시 사용하게 했고, 마스킹 토큰(`***`)이 실제 토큰을 덮어쓰지 않도록 보호 로직을 추가했다.
+- Chat 패널에서 질답이 누적되도록 변경해 스크롤로 이전 대화를 다시 볼 수 있게 했고, 입력창에서 `ArrowUp`/`ArrowDown`으로 이전 질문 히스토리를 탐색하는 기능을 추가했다.
+- 일부 환경에서 정적 파일 캐시로 최신 Chat 스크립트가 반영되지 않던 문제를 방지하기 위해 `app.state.js`, `app.chat.js`의 버전 쿼리스트링을 갱신했다.
+- `repository`의 숫자 이름 DB 파일(`^\d+\.db$`) 정리를 수행했고, `13.db`는 다른 프로세스 점유로 삭제 실패했다. 남은 DB들을 대상으로 `metadata/databases`, `metadata/tables`, `metadata/skills`에 예시 메타 문서를 생성했다.
+- 재시도로 `repository/13.db` 삭제에 성공했고, 연동된 메타 파일(`13.md`, `13-skill01.md`, `13-skill02.md`)도 정리하여 숫자 이름 DB 잔여를 0으로 맞췄다.
+- `sample.db`의 실제 스키마(`customers`, `orders`, `sample`)를 기준으로 메타 문서를 구체화했다. 테이블별 메타(`tables/customers.md`, `tables/orders.md`, `tables/sample.md`)와 전역 스킬(`skills/skill01.md`, `skills/skill02.md`), 샘플 스킬(`skills/sample-skill01.md`, `skills/sample-skill02.md`)을 실사용 문맥으로 채웠다.
+- Chat 컨텍스트에 메타 문서 로딩을 구현했다. `metadata/databases`, `metadata/tables`, `metadata/skills` 문서를 읽어 `metadata_docs`로 주입하며, 질문에 언급된 테이블명을 우선해 관련 문서를 먼저 전달하도록 확장했다.
+- LLM 서버 송수신 내용을 Output에서 확인할 수 있도록 `llm_debug`를 API 응답에 포함하고, Chat/연결테스트에서 `LLM ... OUT/IN` 로그를 출력하도록 반영했다(민감 정보 제외, 긴 내용은 잘라서 표시).
+- 파일 미선택 상태에서도 Chat이 현재 탐색 폴더의 SQLite 파일들을 모아 답변할 수 있도록 폴더 컨텍스트 모드를 추가했다. 다중 DB 컨텍스트(`mode=folder`, `databases[]`, 테이블/샘플/메타 문서)를 LLM에 전달하고, 프런트에서 `explorer_path`를 함께 전송하도록 변경했다.
+- Chat 응답 카드에 컨텍스트 요약(`context_summary`)을 추가해, 참고한 DB 목록/테이블 수/메타 문서 출처를 화면에서 바로 확인할 수 있게 했다.
+- 루트 경로(빈 `currentPath`)에서도 폴더 Chat이 스킵되지 않도록, 파일 미선택 상태의 폴더 컨텍스트 판정을 탐색기 데이터 존재 기준(`lastTreeData`)으로 보완했다.
+- Chat 응답 UI를 조정해 `Answer`를 먼저 표시하고, `Context`/`SQL`은 아래의 작은 버튼으로 눌렀을 때만 펼쳐 보이도록 변경했다.
+- Chat 내부 처리 과정을 확인할 수 있도록 `trace`를 추가했다. 응답 카드에서 `Trace` 버튼으로 단계(컨텍스트 선택, 메타 로딩, LLM 요청/응답 파싱, SQL 실행 여부)를 펼쳐 볼 수 있고, Output에도 `CHAT TRACE ...` 로그가 함께 남는다.
+- 메타 문서 작성 표준화를 위해 프로젝트 최상단에 `guide.txt`를 추가했다. `tables/*.md`, `databases/*.md`, `skills/*.md` 파일명 규칙/템플릿/체크리스트를 정리했다.
+- 메타 활용 품질을 높이기 위해 `guide.txt`에 "속성 의미/질문 유형/쿼리 전략" 권장 섹션 스키마를 추가했고, LLM system prompt에서도 해당 섹션을 우선 준수하도록 보강했다.
+- 요청에 맞춰 현재 사용 중인 metadata 파일들(`sample/sales/support/warehouse`의 database/table/skill, `customers/orders/sample` 관련 문서)을 간단 형식으로 정리했다.
 
 ## 원본 요구사항 메모
 
@@ -390,7 +405,66 @@ https://console.anthropic.com
 
 
 
+채팅을 해봤는데, 한번 질답을 하면 이전 대화는 없어지더라고. 스크롤하면 이전 대화도 볼 수 있게 해주고, 질문 입력 창에 기본적인 기능 추가해줘. 아무것도 입력 안한 상태에서 키보드 위를 누르면 이전 질문, 한번 더 누르면 그 이전 질문, 아래는 다음 질문 이런 기능
 
+
+여기 sample.db에서 customers 테이블에 대해 설명해줘
+
+
+지금은 단순히 테이블에 대한 설명만 하는데, 이 테이블들에 대한 메타정보를 넣어둘테니, 그걸 기반으로 좀 더 나은 추론을 해서 답을 해줬으면 하거든. 테이블명.md나 skill01.md, skill02.md나 그런식으로 넘기고,그걸 참고로해서 답을 줬으면 하는데, 어떤식이 좋을지 추천해줘.
+
+
+여기 repository에 숫자.db 파일은 다 지워주고, 남은 db 파일에 예제로 위 메타 파일을 만들어줘.
+
+
+You
+고객이 현재 몇명이야?
+Context
+mode: folder / db: 4
+Databases:
+sales.db (tables: 3) - sales.db
+sample.db (tables: 3) - sample.db
+support.db (tables: 3) - support.db
+warehouse.db (tables: 3) - warehouse.db
+Metadata Sources:
+database/sales:sales.md
+skill/sales:sales-skill01.md
+skill/sales:sales-skill02.md
+skill/global:skill01.md
+skill/global:skill02.md
+table/sample:sample.md
+database/sample:sample.md
+skill/sample:sample-skill01.md
+skill/sample:sample-skill02.md
+table/customers:customers.md
+table/orders:orders.md
+database/support:support.md
+skill/support:support-skill01.md
+skill/support:support-skill02.md
+database/warehouse:warehouse.md
+skill/warehouse:warehouse-skill01.md
+skill/warehouse:warehouse-skill02.md
+Answer
+현재 고객은 3명입니다. (sample.db의 customers 테이블 기준, 전체 기간)
+SQL
+SELECT COUNT(DISTINCT id) AS 고객수 FROM customers; 이렇게 나오는데, context랑 sql은 그냥 Answer 아래 작은 버튼 두개로 해주고, 그걸 누르면 펼쳐서 현재드 정보가 나오게 해줘.
+
+
+
+내가 너한테 질문하면 너 뭐 생각하면서 "Read app.chat.js" 뭐 이런게 나오잖아. 얘도 쿼리하는거나, 메타 정보 보는걸 이런식으로 나오게 해줘. 뭘 생각하고 있는지 보게.
+
+
+md, skill 파일을 어떻게 작성하면 되는지 그 가이드 파일을 작성해줘. 젤 위에. guide.txt에 해줘.
+
+
+md, skill에 내가 작성하고 싶은게, 그 테이블의 속성이 무슨 의미인지, 어떤식의 질문이 오는지,
+어떤식으로 쿼리해야하는지등을 넣고,그걸 llm 하게 했으면 하거든.
+
+
+왜 그 md 파일을 선택했는지, 그 md에서 어떤걸 어떻게 사용했는지 이런것도 context 에 나오게 할 수 있을까?
+
+
+output 창을 그 위에 split을 선택해서 마우스로 위로 올리거나, 내려서 크기를 조정하고 싶거든. 지금은 그냥 고정인거 같아. 수정해줘.
 
 
 ---

@@ -19,6 +19,10 @@ DEFAULT_SAMPLE_LIMIT = 3
 SETTINGS_FILENAME = '.websqlitebrowser-settings.json'
 DEFAULT_LLM_ENDPOINT = 'https://api.anthropic.com/v1/messages'
 DEFAULT_LLM_MODEL = 'claude-haiku-4-5-20251001'
+METADATA_MAX_DOCS = 12
+METADATA_MAX_CHARS_PER_DOC = 5000
+FOLDER_CHAT_MAX_DATABASES = 8
+FOLDER_CHAT_PREVIEW_TABLES_PER_DB = 2
 LEGACY_DEFAULT_LLM_ENDPOINTS = {
     'http://127.0.0.1:11434/v1',
     'http://localhost:11434/v1',
@@ -375,7 +379,182 @@ def table_preview(database_path: Path, table_name: str, limit: int = DEFAULT_SAM
         return [dict(row) for row in cursor.fetchall()]
 
 
-def build_chat_context(database_path: Path) -> dict[str, object]:
+def metadata_root() -> Path:
+    return repository_root() / 'metadata'
+
+
+def _load_metadata_document(path: Path, scope: str) -> dict[str, str] | None:
+    if not path.exists() or not path.is_file():
+        return None
+
+    try:
+        content = path.read_text(encoding='utf-8')
+    except OSError:
+        return None
+
+    cleaned = content.strip()
+    if not cleaned:
+        return None
+
+    if len(cleaned) > METADATA_MAX_CHARS_PER_DOC:
+        cleaned = cleaned[:METADATA_MAX_CHARS_PER_DOC].rstrip() + '\n\n... (truncated)'
+
+    return {
+        'scope': scope,
+        'source': f'{scope}:{path.name}',
+        'content': cleaned,
+    }
+
+
+def _match_table_names_from_question(tables: list[dict[str, object]], question: str) -> list[str]:
+    lowered_question = question.lower()
+    matched: list[str] = []
+    for table in tables:
+        table_name = str(table.get('name', '')).strip()
+        if table_name and table_name.lower() in lowered_question:
+            matched.append(table_name)
+    return matched
+
+
+def list_sqlite_files_in_directory(folder_path: Path, max_files: int = FOLDER_CHAT_MAX_DATABASES) -> tuple[list[Path], bool]:
+    try:
+        files = [
+            child
+            for child in sorted(folder_path.iterdir(), key=lambda p: p.name.lower())
+            if is_sqlite_file(child)
+        ]
+    except OSError:
+        return [], False
+
+    truncated = len(files) > max_files
+    return files[:max_files], truncated
+
+
+def slim_table_for_chat(table: dict[str, object]) -> dict[str, object]:
+    columns = []
+    for column in table.get('columns', []):
+        if isinstance(column, dict):
+            name = str(column.get('name', '')).strip()
+            col_type = str(column.get('type', '')).strip()
+            if name:
+                columns.append({'name': name, 'type': col_type})
+
+    return {
+        'name': str(table.get('name', '')).strip(),
+        'columns': columns,
+    }
+
+
+def build_folder_chat_context(folder_path: Path, question: str = '') -> dict[str, object]:
+    sqlite_files, truncated = list_sqlite_files_in_directory(folder_path)
+    databases: list[dict[str, object]] = []
+
+    for db_path in sqlite_files:
+        try:
+            tables = fetch_tables(db_path)
+            slim_tables = [slim_table_for_chat(table) for table in tables]
+            previews = []
+            for table in tables[:FOLDER_CHAT_PREVIEW_TABLES_PER_DB]:
+                table_name = str(table.get('name', '')).strip()
+                if not table_name:
+                    continue
+                previews.append(
+                    {
+                        'table': table_name,
+                        'rows': table_preview(db_path, table_name),
+                    }
+                )
+
+            metadata_docs = load_metadata_documents(db_path, tables, question)
+
+            databases.append(
+                {
+                    'database': db_path.name,
+                    'path': relative_to_root(db_path),
+                    'tables': slim_tables,
+                    'previews': previews,
+                    'metadata_docs': metadata_docs,
+                }
+            )
+        except (OSError, sqlite3.Error):
+            databases.append(
+                {
+                    'database': db_path.name,
+                    'path': relative_to_root(db_path),
+                    'error': 'Failed to inspect database.',
+                }
+            )
+
+    return {
+        'mode': 'folder',
+        'folder': relative_to_root(folder_path),
+        'database_count': len(databases),
+        'database_list_truncated': truncated,
+        'databases': databases,
+        'guidance': {
+            'note': 'When multiple databases are provided, identify target database explicitly before generating SQL.',
+        },
+    }
+
+
+def load_metadata_documents(
+    database_path: Path,
+    tables: list[dict[str, object]],
+    question: str,
+) -> list[dict[str, str]]:
+    root = metadata_root()
+    if not root.exists() or not root.is_dir():
+        return []
+
+    db_stem = database_path.stem
+    table_names = [str(table.get('name', '')).strip() for table in tables]
+    table_names = [name for name in table_names if name]
+    matched_table_names = _match_table_names_from_question(tables, question)
+
+    prioritized_table_names: list[str]
+    if matched_table_names:
+        remainder = [name for name in table_names if name not in matched_table_names]
+        prioritized_table_names = matched_table_names + remainder
+    else:
+        prioritized_table_names = table_names
+
+    docs: list[dict[str, str]] = []
+    seen_paths: set[Path] = set()
+
+    def add_doc(path: Path, scope: str) -> None:
+        if len(docs) >= METADATA_MAX_DOCS:
+            return
+        normalized = path.resolve()
+        if normalized in seen_paths:
+            return
+        document = _load_metadata_document(path, scope)
+        if document is None:
+            return
+        docs.append(document)
+        seen_paths.add(normalized)
+
+    # Database-level doc
+    add_doc(root / 'databases' / f'{db_stem}.md', f'database/{db_stem}')
+
+    # DB-scoped skills first (e.g. sample-skill01.md)
+    skills_dir = root / 'skills'
+    if skills_dir.exists() and skills_dir.is_dir():
+        for file_path in sorted(skills_dir.glob(f'{db_stem}-*.md')):
+            add_doc(file_path, f'skill/{db_stem}')
+
+        # Global skills (skill01.md, skill02.md, ...)
+        for file_path in sorted(skills_dir.glob('skill*.md')):
+            add_doc(file_path, 'skill/global')
+
+    # Table docs (question-matched tables first)
+    tables_dir = root / 'tables'
+    for table_name in prioritized_table_names:
+        add_doc(tables_dir / f'{table_name}.md', f'table/{table_name}')
+
+    return docs
+
+
+def build_chat_context(database_path: Path, question: str = '') -> dict[str, object]:
     tables = fetch_tables(database_path)
     preview_rows = []
     for table in tables:
@@ -386,11 +565,107 @@ def build_chat_context(database_path: Path) -> dict[str, object]:
             }
         )
 
+    metadata_docs = load_metadata_documents(database_path, tables, question)
+
     return {
+        'mode': 'single_db',
         'database': database_path.name,
+        'path': relative_to_root(database_path),
         'tables': tables,
         'previews': preview_rows,
+        'metadata_docs': metadata_docs,
     }
+
+
+def summarize_chat_context(context: dict[str, object]) -> dict[str, object]:
+    mode = str(context.get('mode', 'single_db'))
+    summary: dict[str, object] = {
+        'mode': mode,
+        'database_count': 0,
+        'databases': [],
+        'metadata_sources': [],
+    }
+
+    metadata_sources: list[str] = []
+
+    if mode == 'folder':
+        databases = context.get('databases', [])
+        database_items: list[dict[str, object]] = []
+        if isinstance(databases, list):
+            for item in databases:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get('database', '')).strip()
+                path = str(item.get('path', '')).strip()
+                if not name:
+                    continue
+
+                table_count = 0
+                tables = item.get('tables', [])
+                if isinstance(tables, list):
+                    table_count = len(tables)
+
+                db_meta_sources: list[str] = []
+                docs = item.get('metadata_docs', [])
+                if isinstance(docs, list):
+                    for doc in docs:
+                        if isinstance(doc, dict):
+                            source = str(doc.get('source', '')).strip()
+                            if source:
+                                db_meta_sources.append(source)
+                                metadata_sources.append(source)
+
+                database_items.append(
+                    {
+                        'name': name,
+                        'path': path,
+                        'table_count': table_count,
+                        'metadata_sources': db_meta_sources,
+                    }
+                )
+
+        summary['database_count'] = len(database_items)
+        summary['databases'] = database_items
+    else:
+        db_name = str(context.get('database', '')).strip()
+        db_path = str(context.get('path', '')).strip()
+        table_count = 0
+        tables = context.get('tables', [])
+        if isinstance(tables, list):
+            table_count = len(tables)
+
+        docs = context.get('metadata_docs', [])
+        db_meta_sources: list[str] = []
+        if isinstance(docs, list):
+            for doc in docs:
+                if isinstance(doc, dict):
+                    source = str(doc.get('source', '')).strip()
+                    if source:
+                        db_meta_sources.append(source)
+                        metadata_sources.append(source)
+
+        if db_name:
+            summary['database_count'] = 1
+            summary['databases'] = [
+                {
+                    'name': db_name,
+                    'path': db_path,
+                    'table_count': table_count,
+                    'metadata_sources': db_meta_sources,
+                }
+            ]
+
+    # Keep unique order for display.
+    unique_sources: list[str] = []
+    seen = set()
+    for source in metadata_sources:
+        if source in seen:
+            continue
+        unique_sources.append(source)
+        seen.add(source)
+
+    summary['metadata_sources'] = unique_sources
+    return summary
 
 
 def normalise_chat_endpoint(endpoint: str) -> str:
@@ -700,6 +975,13 @@ def mask_sensitive_info(content: str, database_path: Path | None = None) -> str:
     return masked
 
 
+def truncate_text(value: str, max_length: int = 1500) -> str:
+    text = str(value)
+    if len(text) <= max_length:
+        return text
+    return f'{text[:max_length]}... (truncated)'
+
+
 def call_llm(
     settings_data: dict[str, str],
     question: str,
@@ -710,14 +992,36 @@ def call_llm(
     if not endpoint:
         raise SuspiciousOperation('LLM endpoint is required.')
     provider = detect_llm_provider(endpoint)
+    trace: list[str] = [f'detect provider={provider} endpoint={endpoint}']
 
     model = settings_data.get('model', '').strip()
     if not model:
         raise SuspiciousOperation('LLM model is required.')
 
+    mode = str(context.get('mode', 'single_db'))
+    if mode == 'folder':
+        databases = context.get('databases', [])
+        db_count = len(databases) if isinstance(databases, list) else 0
+        metadata_count = 0
+        if isinstance(databases, list):
+            for item in databases:
+                if isinstance(item, dict):
+                    docs = item.get('metadata_docs', [])
+                    if isinstance(docs, list):
+                        metadata_count += len(docs)
+        trace.append(f'build folder context db_count={db_count} metadata_docs={metadata_count}')
+    else:
+        tables = context.get('tables', [])
+        metadata_docs = context.get('metadata_docs', [])
+        table_count = len(tables) if isinstance(tables, list) else 0
+        metadata_count = len(metadata_docs) if isinstance(metadata_docs, list) else 0
+        trace.append(f'build single-db context table_count={table_count} metadata_docs={metadata_count}')
+
     system_prompt = (
         'You are a Korean assistant for SQLite database exploration. '
         'Answer using only the provided schema and sample rows. '
+        'If metadata_docs are provided in context, treat them as authoritative business semantics. '
+        'Prioritize metadata sections for field meaning, question patterns, and query strategy when they are present. '
         'If you are unsure, say so clearly. '
         'Return exactly one JSON object with keys "answer" and "sql". '
         'The "answer" value must be Korean plain text. '
@@ -768,6 +1072,7 @@ def call_llm(
         headers=headers,
         method='POST',
     )
+    trace.append(f'send llm request model={model}')
 
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
@@ -811,6 +1116,21 @@ def call_llm(
     except urllib.error.URLError as error:
         raise SuspiciousOperation(f'LLM connection failed: {error.reason}')
 
+    request_preview = truncate_text(
+        json.dumps(
+            {
+                'provider': provider,
+                'endpoint': endpoint,
+                'model': model,
+                'method': 'POST',
+                'payload': payload,
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    response_preview = truncate_text(json.dumps(response_payload, ensure_ascii=False))
+
     message = ''
     if provider == 'anthropic':
         content_blocks = response_payload.get('content') or []
@@ -835,6 +1155,7 @@ def call_llm(
 
     if not message:
         raise SuspiciousOperation('LLM response did not include a message.')
+    trace.append('parse llm response content')
 
     answer, suggested_sql = parse_llm_content(message)
     if not answer:
@@ -845,14 +1166,32 @@ def call_llm(
 
     query_result = None
     if suggested_sql and database_path is not None:
+        trace.append('execute suggested sql on selected database')
         try:
             query_result = run_read_only_query(database_path, suggested_sql)
+            if isinstance(query_result, dict) and isinstance(query_result.get('results'), list):
+                trace.append(f"sql execution success statements={len(query_result.get('results', []))}")
+            else:
+                row_count = 0
+                if isinstance(query_result, dict):
+                    row_count = int(query_result.get('row_count', 0))
+                trace.append(f'sql execution success rows={row_count}')
         except (OSError, sqlite3.Error, SuspiciousOperation) as error:
             query_result = {'error': str(error)}
+            trace.append(f'sql execution failed error={str(error)}')
+    elif suggested_sql:
+        trace.append('sql suggested but execution skipped (folder mode)')
+    else:
+        trace.append('no sql suggested by llm')
 
     return {
         'answer': masked_answer,
         'suggested_sql': suggested_sql,
         'query_result': query_result,
         'provider': provider,
+        'trace': trace,
+        'llm_debug': {
+            'request': request_preview,
+            'response': response_preview,
+        },
     }

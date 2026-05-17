@@ -1,0 +1,20 @@
+﻿---
+scope: table/nested_2
+priority: 5
+tags: [nested_2, table, semantics]
+source_db: nested_2.db
+---
+
+# nested_2 테이블 메타 (예시)
+
+## 비즈니스 의미
+- 이 문서는 대표 테이블(또는 핵심 엔터티) 설명 예시입니다.
+
+## 컬럼 해석 예시
+- id: 식별자
+- created_at: 생성 시각
+- status: 상태 코드 (정의 필요)
+
+## 질의 응답 규칙
+- count, 기간별 추이, 상태별 분포를 우선적으로 제안할 수 있습니다.
+- 사용자 질문이 모호하면 먼저 기준 기간/필터를 확인합니다.

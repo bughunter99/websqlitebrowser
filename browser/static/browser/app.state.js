@@ -46,6 +46,8 @@ const state = createObservableState({
     chatRequestSeq: 0,
     activeChatRequestId: 0,
     chatPending: false,
+    chatInputHistory: [],
+    chatInputHistoryIndex: -1,
     explorerFilter: '',
     lastTreeData: null,
     selectedExplorerPath: '',
