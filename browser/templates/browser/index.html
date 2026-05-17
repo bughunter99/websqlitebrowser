@@ -21,7 +21,7 @@
             document.documentElement.style.setProperty('--explorer-scale', (!isMobile && isWindows) ? '1.5' : '1');
         }());
     </script>
-    <link rel="stylesheet" href="{% static 'browser/app.css' %}?v=20260516-29">
+    <link rel="stylesheet" href="{% static 'browser/app.css' %}?v=20260517-31">
 </head>
 <body>
     <div class="app-shell">
@@ -109,6 +109,8 @@
                 </div>
             </section>
 
+            <div class="output-resizer" id="output-resizer" role="separator" aria-orientation="horizontal" title="드래그해서 Output 높이 조정"></div>
+
             <div class="workspace-output">
                 <div class="output-toolbar">
                     <span>Output</span>
@@ -140,9 +142,9 @@
     <script src="{% static 'browser/app.explorer.js' %}?v=20260516-1"></script>
     <script src="{% static 'browser/app.grid-interactions.js' %}?v=20260516-1"></script>
     <script src="{% static 'browser/app.settings.js' %}?v=20260517-2"></script>
-    <script src="{% static 'browser/app.chat.js' %}?v=20260517-7"></script>
+    <script src="{% static 'browser/app.chat.js' %}?v=20260517-8"></script>
     <script src="{% static 'browser/app.output.js' %}?v=20260516-1"></script>
-    <script src="{% static 'browser/app.layout.js' %}?v=20260516-1"></script>
+    <script src="{% static 'browser/app.layout.js' %}?v=20260517-2"></script>
     <script src="{% static 'browser/app.shortcuts.js' %}?v=20260516-1"></script>
     <script src="{% static 'browser/app.events.js' %}?v=20260516-12"></script>
 </body>

@@ -87,4 +87,90 @@ function wireSidebarLayout() {
         const width = sidebar ? sidebar.getBoundingClientRect().width : minSidebar;
         applySidebarWidth(width);
     });
+
+    const mainPanel = /** @type {HTMLElement | null} */ (document.querySelector('.main-panel'));
+    const outputPanel = /** @type {HTMLElement | null} */ (document.querySelector('.workspace-output'));
+    const outputResizer = /** @type {HTMLElement | null} */ (document.getElementById('output-resizer'));
+    const OUTPUT_HEIGHT_STORAGE_KEY = 'websqlitebrowser.output.height';
+
+    if (!mainPanel || !outputPanel || !outputResizer) {
+        return;
+    }
+
+    let outputDragging = false;
+    let outputStartY = 0;
+    let outputStartHeight = 0;
+    const minOutputHeight = 68;
+    const minContentHeight = 220;
+
+    const applyOutputHeight = (heightPx) => {
+        if (window.matchMedia('(max-width: 960px)').matches) {
+            outputPanel.style.height = '';
+            return;
+        }
+
+        const panelRect = mainPanel.getBoundingClientRect();
+        const maxOutputHeight = Math.max(minOutputHeight, panelRect.height - 8 - minContentHeight);
+        const safeHeight = Math.max(minOutputHeight, Math.min(maxOutputHeight, heightPx));
+        outputPanel.style.height = `${Math.round(safeHeight)}px`;
+    };
+
+    try {
+        const storedOutputHeight = Number(localStorage.getItem(OUTPUT_HEIGHT_STORAGE_KEY) || 0);
+        if (storedOutputHeight > 0) {
+            applyOutputHeight(storedOutputHeight);
+        }
+    } catch {
+        // Ignore storage read failures.
+    }
+
+    const stopOutputDragging = () => {
+        if (!outputDragging) {
+            return;
+        }
+        outputDragging = false;
+        outputResizer.classList.remove('is-dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+    };
+
+    outputResizer.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) {
+            return;
+        }
+        event.preventDefault();
+        outputDragging = true;
+        outputStartY = event.clientY;
+        outputStartHeight = outputPanel.getBoundingClientRect().height || minOutputHeight;
+        outputResizer.classList.add('is-dragging');
+        document.body.style.cursor = 'row-resize';
+        document.body.style.userSelect = 'none';
+        outputResizer.setPointerCapture(event.pointerId);
+    });
+
+    window.addEventListener('pointermove', (event) => {
+        if (!outputDragging) {
+            return;
+        }
+
+        const nextHeight = outputStartHeight - (event.clientY - outputStartY);
+        applyOutputHeight(nextHeight);
+        try {
+            localStorage.setItem(OUTPUT_HEIGHT_STORAGE_KEY, String(Math.round(nextHeight)));
+        } catch {
+            // Ignore storage write failures.
+        }
+    });
+
+    window.addEventListener('pointerup', stopOutputDragging);
+    window.addEventListener('pointercancel', stopOutputDragging);
+
+    window.addEventListener('resize', () => {
+        if (window.matchMedia('(max-width: 960px)').matches) {
+            outputPanel.style.height = '';
+            return;
+        }
+        const currentHeight = outputPanel.getBoundingClientRect().height || minOutputHeight;
+        applyOutputHeight(currentHeight);
+    });
 }

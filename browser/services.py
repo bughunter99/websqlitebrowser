@@ -383,7 +383,7 @@ def metadata_root() -> Path:
     return repository_root() / 'metadata'
 
 
-def _load_metadata_document(path: Path, scope: str) -> dict[str, str] | None:
+def _load_metadata_document(path: Path, scope: str, reason: str = '') -> dict[str, str] | None:
     if not path.exists() or not path.is_file():
         return None
 
@@ -399,10 +399,16 @@ def _load_metadata_document(path: Path, scope: str) -> dict[str, str] | None:
     if len(cleaned) > METADATA_MAX_CHARS_PER_DOC:
         cleaned = cleaned[:METADATA_MAX_CHARS_PER_DOC].rstrip() + '\n\n... (truncated)'
 
+    _EXCERPT_LEN = 120
+    excerpt_raw = cleaned[:_EXCERPT_LEN].replace('\n', ' ').strip()
+    excerpt = (excerpt_raw + '…') if len(cleaned) > _EXCERPT_LEN else excerpt_raw
+
     return {
         'scope': scope,
         'source': f'{scope}:{path.name}',
         'content': cleaned,
+        'reason': reason,
+        'excerpt': excerpt,
     }
 
 
@@ -521,35 +527,43 @@ def load_metadata_documents(
     docs: list[dict[str, str]] = []
     seen_paths: set[Path] = set()
 
-    def add_doc(path: Path, scope: str) -> None:
+    def add_doc(path: Path, scope: str, reason: str = '') -> None:
         if len(docs) >= METADATA_MAX_DOCS:
             return
         normalized = path.resolve()
         if normalized in seen_paths:
             return
-        document = _load_metadata_document(path, scope)
+        document = _load_metadata_document(path, scope, reason)
         if document is None:
             return
         docs.append(document)
         seen_paths.add(normalized)
 
     # Database-level doc
-    add_doc(root / 'databases' / f'{db_stem}.md', f'database/{db_stem}')
+    add_doc(
+        root / 'databases' / f'{db_stem}.md',
+        f'database/{db_stem}',
+        f"DB '{db_stem}' 레벨 메타 문서 (기본 로드)",
+    )
 
     # DB-scoped skills first (e.g. sample-skill01.md)
     skills_dir = root / 'skills'
     if skills_dir.exists() and skills_dir.is_dir():
         for file_path in sorted(skills_dir.glob(f'{db_stem}-*.md')):
-            add_doc(file_path, f'skill/{db_stem}')
+            add_doc(file_path, f'skill/{db_stem}', f"DB '{db_stem}' 전용 스킬 문서")
 
         # Global skills (skill01.md, skill02.md, ...)
         for file_path in sorted(skills_dir.glob('skill*.md')):
-            add_doc(file_path, 'skill/global')
+            add_doc(file_path, 'skill/global', "전역 스킬 문서 (모든 DB 공통)")
 
     # Table docs (question-matched tables first)
     tables_dir = root / 'tables'
     for table_name in prioritized_table_names:
-        add_doc(tables_dir / f'{table_name}.md', f'table/{table_name}')
+        if table_name in matched_table_names:
+            table_reason = f"질문에 '{table_name}' 언급 → 우선 선택"
+        else:
+            table_reason = f"'{table_name}' 테이블 메타 (기본 로드)"
+        add_doc(tables_dir / f'{table_name}.md', f'table/{table_name}', table_reason)
 
     return docs
 
@@ -605,15 +619,20 @@ def summarize_chat_context(context: dict[str, object]) -> dict[str, object]:
                 if isinstance(tables, list):
                     table_count = len(tables)
 
-                db_meta_sources: list[str] = []
+                db_meta_sources: list[dict[str, str]] = []
                 docs = item.get('metadata_docs', [])
                 if isinstance(docs, list):
                     for doc in docs:
                         if isinstance(doc, dict):
                             source = str(doc.get('source', '')).strip()
                             if source:
-                                db_meta_sources.append(source)
-                                metadata_sources.append(source)
+                                entry = {
+                                    'source': source,
+                                    'reason': str(doc.get('reason', '')),
+                                    'excerpt': str(doc.get('excerpt', '')),
+                                }
+                                db_meta_sources.append(entry)
+                                metadata_sources.append(entry)
 
                 database_items.append(
                     {
@@ -635,14 +654,19 @@ def summarize_chat_context(context: dict[str, object]) -> dict[str, object]:
             table_count = len(tables)
 
         docs = context.get('metadata_docs', [])
-        db_meta_sources: list[str] = []
+        db_meta_sources: list[dict[str, str]] = []
         if isinstance(docs, list):
             for doc in docs:
                 if isinstance(doc, dict):
                     source = str(doc.get('source', '')).strip()
                     if source:
-                        db_meta_sources.append(source)
-                        metadata_sources.append(source)
+                        entry = {
+                            'source': source,
+                            'reason': str(doc.get('reason', '')),
+                            'excerpt': str(doc.get('excerpt', '')),
+                        }
+                        db_meta_sources.append(entry)
+                        metadata_sources.append(entry)
 
         if db_name:
             summary['database_count'] = 1
@@ -656,13 +680,14 @@ def summarize_chat_context(context: dict[str, object]) -> dict[str, object]:
             ]
 
     # Keep unique order for display.
-    unique_sources: list[str] = []
-    seen = set()
-    for source in metadata_sources:
-        if source in seen:
+    unique_sources: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in metadata_sources:
+        source_key = item['source'] if isinstance(item, dict) else str(item)
+        if source_key in seen:
             continue
-        unique_sources.append(source)
-        seen.add(source)
+        unique_sources.append(item if isinstance(item, dict) else {'source': source_key, 'reason': '', 'excerpt': ''})
+        seen.add(source_key)
 
     summary['metadata_sources'] = unique_sources
     return summary

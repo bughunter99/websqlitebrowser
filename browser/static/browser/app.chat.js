@@ -21,25 +21,40 @@ function renderChatResponse(data) {
             : '';
 
         const sourceRows = Array.isArray(contextSummary.metadata_sources)
-            ? contextSummary.metadata_sources.map((source) => `<li>${escapeHtml(String(source))}</li>`).join('')
+            ? contextSummary.metadata_sources.map((item) => {
+                const isObj = typeof item === 'object' && item !== null;
+                const src = escapeHtml(String(isObj ? (item.source || '') : item));
+                const reason = isObj && item.reason
+                    ? `<span class="chat-meta-reason">- ${escapeHtml(String(item.reason))}</span>`
+                    : '';
+                const excerpt = isObj && item.excerpt
+                    ? `<div class="chat-meta-excerpt">${escapeHtml(String(item.excerpt))}</div>`
+                    : '';
+                return `<li class="chat-meta-item">${src}${reason}${excerpt}</li>`;
+            }).join('')
             : '';
 
         detailSections.push({
             label: 'Context',
             content:
                 `<strong>Context</strong>`
-                + `<div style="margin-top: 8px;">mode: ${escapeHtml(String(contextSummary.mode || 'unknown'))} / db: ${Number(contextSummary.database_count || 0)}</div>`
-                + (dbRows ? `<div style="margin-top: 6px;"><div>Databases:</div><ul style="margin: 4px 0 0 18px; padding: 0;">${dbRows}</ul></div>` : '')
-                + (sourceRows ? `<div style="margin-top: 6px;"><div>Metadata Sources:</div><ul style="margin: 4px 0 0 18px; padding: 0;">${sourceRows}</ul></div>` : ''),
+                + `<div class="chat-detail-line">mode: ${escapeHtml(String(contextSummary.mode || 'unknown'))} / db: ${Number(contextSummary.database_count || 0)}</div>`
+                + (dbRows ? `<div class="chat-detail-block"><div>Databases:</div><ul class="chat-detail-list">${dbRows}</ul></div>` : '')
+                + (sourceRows ? `<div class="chat-detail-block"><div>Metadata Sources:</div><ul class="chat-detail-list">${sourceRows}</ul></div>` : ''),
         });
     }
 
-    parts.push(`<div class="status-box"><strong>Answer</strong><div style="margin-top: 8px; white-space: pre-wrap;">${escapeHtml(data.answer || '')}</div></div>`);
+    parts.push(
+        `<div class="status-box chat-message chat-message-assistant">`
+        + `<div class="chat-message-title">Answer</div>`
+        + `<div class="chat-message-body">${escapeHtml(data.answer || '')}</div>`
+        + `</div>`
+    );
 
     if (data.suggested_sql) {
         detailSections.push({
             label: 'SQL',
-            content: `<strong>SQL</strong><pre style="margin: 8px 0 0; white-space: pre-wrap;">${escapeHtml(data.suggested_sql)}</pre>`,
+            content: `<strong>SQL</strong><pre class="chat-sql-block">${escapeHtml(data.suggested_sql)}</pre>`,
         });
     }
 
@@ -49,27 +64,27 @@ function renderChatResponse(data) {
             label: 'Trace',
             content:
                 `<strong>Trace</strong>`
-                + `<div style="margin-top: 6px;">chat이 내부에서 수행한 단계</div>`
-                + `<ul style="margin: 6px 0 0 18px; padding: 0;">${traceRows}</ul>`,
+                + `<div class="chat-detail-line">chat이 내부에서 수행한 단계</div>`
+                + `<ul class="chat-detail-list">${traceRows}</ul>`,
         });
     }
 
     if (detailSections.length) {
         const buttons = detailSections
-            .map((section, index) => `<button type="button" data-chat-detail-toggle="${index}" style="padding: 2px 8px; font-size: 11px;">${escapeHtml(section.label)}</button>`)
+            .map((section, index) => `<button type="button" class="chat-detail-toggle" data-chat-detail-toggle="${index}">${escapeHtml(section.label)}</button>`)
             .join('');
         const panels = detailSections
-            .map((section, index) => `<div class="status-box" data-chat-detail-panel="${index}" style="margin-top: 8px; display: none;">${section.content}</div>`)
+            .map((section, index) => `<div class="status-box chat-detail-panel" data-chat-detail-panel="${index}" style="display: none;">${section.content}</div>`)
             .join('');
 
-        parts.push(`<div style="margin-top: 8px;"><div class="button-row">${buttons}</div>${panels}</div>`);
+        parts.push(`<div class="chat-detail-wrap"><div class="button-row">${buttons}</div>${panels}</div>`);
     }
 
     if (data.query_result) {
         if (data.query_result.error) {
-            parts.push(`<div class="status-box error" style="margin-top: 12px;">${escapeHtml(data.query_result.error)}</div>`);
+            parts.push(`<div class="status-box error chat-query-error">${escapeHtml(data.query_result.error)}</div>`);
         } else {
-            parts.push(`<div style="margin-top: 12px;">${renderTable(data.query_result.columns || [], data.query_result.rows || [])}</div>`);
+            parts.push(`<div class="chat-query-result">${renderTable(data.query_result.columns || [], data.query_result.rows || [])}</div>`);
         }
     }
 
@@ -104,13 +119,14 @@ function setInputCursorToEnd(input) {
 
 function appendUserChatMessage(message) {
     const wrapper = document.createElement('div');
-    wrapper.className = 'status-box';
-    wrapper.innerHTML = `<strong>You</strong><div style="margin-top: 8px; white-space: pre-wrap;">${escapeHtml(message)}</div>`;
+    wrapper.className = 'status-box chat-message chat-message-user';
+    wrapper.innerHTML = `<div class="chat-message-title">You</div><div class="chat-message-body">${escapeHtml(message)}</div>`;
     domElements.chatResponse.appendChild(wrapper);
 }
 
 function appendAssistantChatMessage(data) {
     const wrapper = document.createElement('div');
+    wrapper.className = 'chat-assistant-wrap';
     wrapper.innerHTML = renderChatResponse(data);
     domElements.chatResponse.appendChild(wrapper);
     attachChatDetailToggles(wrapper);
@@ -121,7 +137,7 @@ function appendAssistantChatMessage(data) {
 
 function appendChatError(message) {
     const wrapper = document.createElement('div');
-    wrapper.className = 'status-box error';
+    wrapper.className = 'status-box error chat-message';
     wrapper.textContent = message;
     domElements.chatResponse.appendChild(wrapper);
 }
