@@ -1324,6 +1324,17 @@ def _masked_headers_for_debug(headers: dict[str, str]) -> dict[str, str]:
     return masked
 
 
+def _upsert_header_case_insensitive(headers: dict[str, str], key: str, value: str) -> None:
+    target = key.strip()
+    if not target:
+        return
+    lowered = target.lower()
+    for existing in list(headers.keys()):
+        if existing.lower() == lowered and existing != target:
+            del headers[existing]
+    headers[target] = value
+
+
 def call_llm(
     settings_data: dict[str, str],
     question: str,
@@ -1331,13 +1342,19 @@ def call_llm(
     database_path: Path | None = None,
     folder_path: Path | None = None,
 ) -> dict[str, object]:
-    endpoint = normalise_chat_endpoint(settings_data.get('endpoint', ''))
+    endpoint_input_raw = str(settings_data.get('endpoint', ''))
+    model_input_raw = str(settings_data.get('model', ''))
+    token_input_raw = str(settings_data.get('token', ''))
+    additional_headers_input_raw = str(settings_data.get('additional_headers', ''))
+    additional_payload_input_raw = str(settings_data.get('additional_payload', ''))
+
+    endpoint = normalise_chat_endpoint(endpoint_input_raw)
     if not endpoint:
         raise SuspiciousOperation('LLM endpoint is required.')
     provider = detect_llm_provider(endpoint)
     trace: list[str] = [f'detect provider={provider} endpoint={endpoint}']
 
-    model = settings_data.get('model', '').strip()
+    model = model_input_raw.strip()
     if not model:
         raise SuspiciousOperation('LLM model is required.')
 
@@ -1385,22 +1402,29 @@ def call_llm(
         'Content-Type': 'application/json',
     }
     additional_headers = parse_json_object_setting(
-        settings_data.get('additional_headers', ''),
+        additional_headers_input_raw,
         'additional_headers',
     )
+    additional_header_keys: set[str] = set()
+    overridden_additional_headers: list[str] = []
 
     for key, value in additional_headers.items():
         header_key = str(key).strip()
         if not header_key:
             continue
-        headers[header_key] = str(value)
+        _upsert_header_case_insensitive(headers, header_key, str(value))
+        additional_header_keys.add(header_key.lower())
 
-    token = settings_data.get('token', '').strip()
+    token = token_input_raw.strip()
     if provider == 'anthropic':
         if not token:
             raise SuspiciousOperation('Anthropic API key is required.')
-        headers['x-api-key'] = token
-        headers['anthropic-version'] = '2023-06-01'
+        if 'x-api-key' in additional_header_keys:
+            overridden_additional_headers.append('x-api-key')
+        if 'anthropic-version' in additional_header_keys:
+            overridden_additional_headers.append('anthropic-version')
+        _upsert_header_case_insensitive(headers, 'x-api-key', token)
+        _upsert_header_case_insensitive(headers, 'anthropic-version', '2023-06-01')
         payload = {
             'model': model,
             'max_tokens': 1024,
@@ -1420,12 +1444,38 @@ def call_llm(
             'temperature': 0.2,
         }
         if token:
-            headers['Authorization'] = f'Bearer {token}'
+            if 'authorization' in additional_header_keys:
+                overridden_additional_headers.append('authorization')
+            _upsert_header_case_insensitive(headers, 'Authorization', f'Bearer {token}')
 
     additional_payload = parse_json_object_setting(
-        settings_data.get('additional_payload', ''),
+        additional_payload_input_raw,
         'additional_payload',
     )
+    reserved_payload_keys = {
+        'additional_headers',
+        'additional_payload',
+        'endpoint',
+        'model',
+        'token',
+        'headers',
+        'header_keys',
+        'payload_keys',
+        'raw_input',
+    }
+    removed_payload_keys: list[str] = []
+    for key in list(additional_payload.keys()):
+        key_text = str(key).strip()
+        if key_text.lower() in reserved_payload_keys:
+            removed_payload_keys.append(key_text)
+            del additional_payload[key]
+
+    if removed_payload_keys:
+        trace.append(
+            'ignore additional_payload reserved keys: '
+            + ', '.join(sorted(set(removed_payload_keys)))
+        )
+
     if additional_payload:
         payload.update(additional_payload)
 
@@ -1436,6 +1486,10 @@ def call_llm(
         method='POST',
     )
     debug_headers = _masked_headers_for_debug(headers)
+    request_effective_headers = _masked_headers_for_debug(dict(request.header_items()))
+    if overridden_additional_headers:
+        unique_overridden = sorted(set(overridden_additional_headers))
+        trace.append(f'override additional headers: {", ".join(unique_overridden)}')
     trace.append(f'apply headers count={len(debug_headers)} keys={", ".join(sorted(debug_headers.keys()))}')
     trace.append(f'send llm request model={model}')
 
@@ -1450,8 +1504,8 @@ def call_llm(
             'method': 'POST',
             'model': model,
             'payload_keys': sorted(list(payload.keys())),
-            'header_keys': sorted(list(headers.keys())),
-            'headers': debug_headers,
+            'effective_headers': request_effective_headers,
+            'custom_header_keys': sorted(additional_headers.keys()),
         }
         message = (
             f'LLM request failed with status {error.code}. '
@@ -1483,17 +1537,36 @@ def call_llm(
     except urllib.error.URLError as error:
         raise SuspiciousOperation(f'LLM connection failed: {error.reason}')
 
+    # Build a display-safe copy of the payload (truncate large text fields)
+    _MAX_FIELD = 300
+    display_payload: dict = {}
+    for k, v in payload.items():
+        if isinstance(v, str) and len(v) > _MAX_FIELD:
+            display_payload[k] = v[:_MAX_FIELD] + f'…(+{len(v) - _MAX_FIELD})'
+        elif isinstance(v, list):
+            display_payload[k] = [
+                (
+                    {
+                        mk: (mv[:_MAX_FIELD] + f'…(+{len(mv) - _MAX_FIELD})' if isinstance(mv, str) and len(mv) > _MAX_FIELD else mv)
+                        for mk, mv in item.items()
+                    }
+                    if isinstance(item, dict) else item
+                )
+                for item in v
+            ]
+        else:
+            display_payload[k] = v
+
     request_preview = truncate_text(
         json.dumps(
             {
-                'provider': provider,
-                'endpoint': endpoint,
-                'model': model,
                 'method': 'POST',
-                'headers': debug_headers,
-                'payload': payload,
+                'endpoint': endpoint,
+                'headers': request_effective_headers,
+                'body': display_payload,
             },
             ensure_ascii=False,
+            indent=2,
         )
     )
 

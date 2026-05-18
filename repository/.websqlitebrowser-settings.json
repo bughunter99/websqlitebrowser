@@ -5,7 +5,6 @@
   "system_folder": "system",
   "current_folder": "current",
   "hist_folder": "hist",
-  "http_referer": "",
-  "x_title": "",
-  "user_agent": ""
+  "additional_headers": "{\n\"Send-System-Name\": \"planground\",\n\"User-Type\": \"AD_ID\"\n}",
+  "additional_payload": ""
 }
