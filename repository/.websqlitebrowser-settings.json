@@ -4,5 +4,8 @@
   "model": "claude-haiku-4-5-20251001",
   "system_folder": "system",
   "current_folder": "current",
-  "hist_folder": "hist"
+  "hist_folder": "hist",
+  "http_referer": "",
+  "x_title": "",
+  "user_agent": ""
 }

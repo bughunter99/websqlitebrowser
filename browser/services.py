@@ -22,9 +22,8 @@ DEFAULT_LLM_MODEL = 'claude-haiku-4-5-20251001'
 DEFAULT_SYSTEM_FOLDER = 'system'
 DEFAULT_CURRENT_FOLDER = 'current'
 DEFAULT_HIST_FOLDER = 'hist'
-DEFAULT_HTTP_REFERER = ''
-DEFAULT_X_TITLE = ''
-DEFAULT_USER_AGENT = ''
+DEFAULT_ADDITIONAL_HEADERS = ''
+DEFAULT_ADDITIONAL_PAYLOAD = ''
 METADATA_MAX_DOCS = 12
 METADATA_MAX_CHARS_PER_DOC = 5000
 FOLDER_CHAT_MAX_DATABASES = 8
@@ -258,9 +257,8 @@ def load_settings() -> dict[str, str]:
             'system_folder': DEFAULT_SYSTEM_FOLDER,
             'current_folder': DEFAULT_CURRENT_FOLDER,
             'hist_folder': DEFAULT_HIST_FOLDER,
-            'http_referer': DEFAULT_HTTP_REFERER,
-            'x_title': DEFAULT_X_TITLE,
-            'user_agent': DEFAULT_USER_AGENT,
+            'additional_headers': DEFAULT_ADDITIONAL_HEADERS,
+            'additional_payload': DEFAULT_ADDITIONAL_PAYLOAD,
         }
 
     with path.open('r', encoding='utf-8') as handle:
@@ -271,9 +269,8 @@ def load_settings() -> dict[str, str]:
     system_folder = str(data.get('system_folder', DEFAULT_SYSTEM_FOLDER)).strip() or DEFAULT_SYSTEM_FOLDER
     current_folder = str(data.get('current_folder', DEFAULT_CURRENT_FOLDER)).strip() or DEFAULT_CURRENT_FOLDER
     hist_folder = str(data.get('hist_folder', DEFAULT_HIST_FOLDER)).strip() or DEFAULT_HIST_FOLDER
-    http_referer = str(data.get('http_referer', DEFAULT_HTTP_REFERER)).strip()
-    x_title = str(data.get('x_title', DEFAULT_X_TITLE)).strip()
-    user_agent = str(data.get('user_agent', DEFAULT_USER_AGENT)).strip()
+    additional_headers = str(data.get('additional_headers', DEFAULT_ADDITIONAL_HEADERS)).strip()
+    additional_payload = str(data.get('additional_payload', DEFAULT_ADDITIONAL_PAYLOAD)).strip()
 
     # One-time migration for previous local Ollama defaults.
     if endpoint in LEGACY_DEFAULT_LLM_ENDPOINTS:
@@ -294,9 +291,8 @@ def load_settings() -> dict[str, str]:
         'system_folder': system_folder,
         'current_folder': current_folder,
         'hist_folder': hist_folder,
-        'http_referer': http_referer,
-        'x_title': x_title,
-        'user_agent': user_agent,
+        'additional_headers': additional_headers,
+        'additional_payload': additional_payload,
     }
 
 
@@ -306,9 +302,21 @@ def save_settings(payload: dict[str, object]) -> dict[str, str]:
     system_folder = str(payload.get('system_folder', '')).strip() or DEFAULT_SYSTEM_FOLDER
     current_folder = str(payload.get('current_folder', '')).strip() or DEFAULT_CURRENT_FOLDER
     hist_folder = str(payload.get('hist_folder', '')).strip() or DEFAULT_HIST_FOLDER
-    http_referer = str(payload.get('http_referer', '')).strip()
-    x_title = str(payload.get('x_title', '')).strip()
-    user_agent = str(payload.get('user_agent', '')).strip()
+    additional_headers = str(payload.get('additional_headers', '')).strip()
+    additional_payload = str(payload.get('additional_payload', '')).strip()
+
+    def _validate_json_object(raw: str, field_name: str) -> None:
+        if not raw:
+            return
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise SuspiciousOperation(f'Invalid JSON in {field_name}: {error.msg}')
+        if not isinstance(parsed, dict):
+            raise SuspiciousOperation(f'{field_name} must be a JSON object.')
+
+    _validate_json_object(additional_headers, 'additional_headers')
+    _validate_json_object(additional_payload, 'additional_payload')
 
     # 저장 전 경로 정규화 검증 (repository 기준 상대경로 또는 허용 범위 절대경로)
     resolve_repo_path(system_folder)
@@ -322,9 +330,8 @@ def save_settings(payload: dict[str, object]) -> dict[str, str]:
         'system_folder': system_folder,
         'current_folder': current_folder,
         'hist_folder': hist_folder,
-        'http_referer': http_referer,
-        'x_title': x_title,
-        'user_agent': user_agent,
+        'additional_headers': additional_headers,
+        'additional_payload': additional_payload,
     }
     path = settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -341,10 +348,22 @@ def save_settings(payload: dict[str, object]) -> dict[str, str]:
         'system_folder': data['system_folder'],
         'current_folder': data['current_folder'],
         'hist_folder': data['hist_folder'],
-        'http_referer': data['http_referer'],
-        'x_title': data['x_title'],
-        'user_agent': data['user_agent'],
+        'additional_headers': data['additional_headers'],
+        'additional_payload': data['additional_payload'],
     }
+
+
+def parse_json_object_setting(raw_value: str, field_name: str) -> dict[str, object]:
+    raw = str(raw_value or '').strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise SuspiciousOperation(f'Invalid JSON in {field_name}: {error.msg}')
+    if not isinstance(parsed, dict):
+        raise SuspiciousOperation(f'{field_name} must be a JSON object.')
+    return parsed
 
 
 def connect_database(database_path: Path) -> sqlite3.Connection:
@@ -1353,15 +1372,17 @@ def call_llm(
     headers = {
         'Content-Type': 'application/json',
     }
-    http_referer = settings_data.get('http_referer', '').strip()
-    x_title = settings_data.get('x_title', '').strip()
-    user_agent = settings_data.get('user_agent', '').strip()
-    if http_referer:
-        headers['HTTP-Referer'] = http_referer
-    if x_title:
-        headers['X-Title'] = x_title
-    if user_agent:
-        headers['User-Agent'] = user_agent
+    additional_headers = parse_json_object_setting(
+        settings_data.get('additional_headers', ''),
+        'additional_headers',
+    )
+
+    for key, value in additional_headers.items():
+        header_key = str(key).strip()
+        if not header_key:
+            continue
+        headers[header_key] = str(value)
+
     token = settings_data.get('token', '').strip()
     if provider == 'anthropic':
         if not token:
@@ -1388,6 +1409,13 @@ def call_llm(
         }
         if token:
             headers['Authorization'] = f'Bearer {token}'
+
+    additional_payload = parse_json_object_setting(
+        settings_data.get('additional_payload', ''),
+        'additional_payload',
+    )
+    if additional_payload:
+        payload.update(additional_payload)
 
     request = urllib.request.Request(
         endpoint,
