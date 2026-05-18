@@ -1312,6 +1312,18 @@ def truncate_text(value: str, max_length: int = 1500) -> str:
     return f'{text[:max_length]}... (truncated)'
 
 
+def _masked_headers_for_debug(headers: dict[str, str]) -> dict[str, str]:
+    masked: dict[str, str] = {}
+    for key, value in headers.items():
+        header_key = str(key)
+        lowered = header_key.lower()
+        if lowered in {'authorization', 'x-api-key', 'api-key', 'proxy-authorization'}:
+            masked[header_key] = '[MASKED]'
+            continue
+        masked[header_key] = truncate_text(str(value), 200)
+    return masked
+
+
 def call_llm(
     settings_data: dict[str, str],
     question: str,
@@ -1423,6 +1435,8 @@ def call_llm(
         headers=headers,
         method='POST',
     )
+    debug_headers = _masked_headers_for_debug(headers)
+    trace.append(f'apply headers count={len(debug_headers)} keys={", ".join(sorted(debug_headers.keys()))}')
     trace.append(f'send llm request model={model}')
 
     try:
@@ -1437,6 +1451,7 @@ def call_llm(
             'model': model,
             'payload_keys': sorted(list(payload.keys())),
             'header_keys': sorted(list(headers.keys())),
+            'headers': debug_headers,
         }
         message = (
             f'LLM request failed with status {error.code}. '
@@ -1475,6 +1490,7 @@ def call_llm(
                 'endpoint': endpoint,
                 'model': model,
                 'method': 'POST',
+                'headers': debug_headers,
                 'payload': payload,
             },
             ensure_ascii=False,
