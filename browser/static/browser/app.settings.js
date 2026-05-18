@@ -9,6 +9,9 @@ async function loadSettings() {
         document.getElementById('llm-endpoint').value = data.settings.endpoint || '';
         document.getElementById('llm-token').value = data.settings.token || '';
         document.getElementById('llm-model').value = data.settings.model || '';
+        document.getElementById('llm-http-referer').value = data.settings.http_referer || '';
+        document.getElementById('llm-x-title').value = data.settings.x_title || '';
+        document.getElementById('llm-user-agent').value = data.settings.user_agent || '';
         document.getElementById('sqlite-folder-system').value = data.settings.system_folder || 'system';
         document.getElementById('sqlite-folder-current').value = data.settings.current_folder || 'current';
         document.getElementById('sqlite-folder-hist').value = data.settings.hist_folder || 'hist';
@@ -28,11 +31,14 @@ async function testSettingsConnection() {
             endpoint: document.getElementById('llm-endpoint').value,
             token: document.getElementById('llm-token').value,
             model: document.getElementById('llm-model').value,
+            http_referer: document.getElementById('llm-http-referer').value,
+            x_title: document.getElementById('llm-x-title').value,
+            user_agent: document.getElementById('llm-user-agent').value,
             system_folder: document.getElementById('sqlite-folder-system').value,
             current_folder: document.getElementById('sqlite-folder-current').value,
             hist_folder: document.getElementById('sqlite-folder-hist').value,
         };
-        outputLog(`SETTINGS TEST REQUEST endpoint=${payload.endpoint || '(empty)'} model=${payload.model || '(empty)'} token=${payload.token ? '[set]' : '[empty]'}`);
+        outputLog(`SETTINGS TEST REQUEST endpoint=${payload.endpoint || '(empty)'} model=${payload.model || '(empty)'} token=${payload.token ? '[set]' : '[empty]'} referer=${payload.http_referer || '(empty)'} title=${payload.x_title || '(empty)'} user_agent=${payload.user_agent || '(empty)'}`);
         const data = await requestJson('/api/settings/test/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -73,6 +79,9 @@ function wireSettingsPanel() {
                     endpoint: /** @type {HTMLInputElement} */ (document.getElementById('llm-endpoint')).value,
                     token: /** @type {HTMLInputElement} */ (document.getElementById('llm-token')).value,
                     model: /** @type {HTMLInputElement} */ (document.getElementById('llm-model')).value,
+                    http_referer: /** @type {HTMLInputElement} */ (document.getElementById('llm-http-referer')).value,
+                    x_title: /** @type {HTMLInputElement} */ (document.getElementById('llm-x-title')).value,
+                    user_agent: /** @type {HTMLInputElement} */ (document.getElementById('llm-user-agent')).value,
                     system_folder: /** @type {HTMLInputElement} */ (document.getElementById('sqlite-folder-system')).value,
                     current_folder: /** @type {HTMLInputElement} */ (document.getElementById('sqlite-folder-current')).value,
                     hist_folder: /** @type {HTMLInputElement} */ (document.getElementById('sqlite-folder-hist')).value,
