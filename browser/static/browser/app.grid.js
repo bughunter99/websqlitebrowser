@@ -33,11 +33,26 @@ function sortRowsByColumn(rows, columns, sortState) {
 
 /**
  * 헤더 텍스트 기반 초기 컬럼 너비 계산
+ * 한글/중일문자는 약 14px, 영문은 약 8px로 계산
  */
 function getInitialColumnWidthByHeader(headerText) {
     const text = String(headerText ?? '');
-    const estimated = Math.ceil(text.length * 8) + 24;
-    return Math.min(320, Math.max(72, estimated));
+    let estimated = 24; // 기본 padding
+    
+    for (const char of text) {
+        const code = char.charCodeAt(0);
+        // 한글, 중문, 일문(CJK) 판단
+        if ((code >= 0x4E00 && code <= 0x9FFF) ||  // CJK Unified Ideographs
+            (code >= 0x3040 && code <= 0x309F) ||  // Hiragana
+            (code >= 0x30A0 && code <= 0x30FF) ||  // Katakana
+            (code >= 0xAC00 && code <= 0xD7AF)) {  // Hangul
+            estimated += 14;
+        } else {
+            estimated += 8;
+        }
+    }
+    
+    return Math.min(320, Math.max(80, estimated));
 }
 
 /**
