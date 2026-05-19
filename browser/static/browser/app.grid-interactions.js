@@ -53,6 +53,9 @@ function attachGridInteractions(container) {
             state.selectedCells.add(getGridCellKey(rc.row, rc.col));
             gridSetActiveCell(grid, container, rc.row, rc.col);
         }
+        
+        // 선택된 셀을 뷰포트 안으로 가져오기
+        bringActiveCellIntoView(container);
     });
 
     grid.addEventListener('mousemove', (event) => {
@@ -71,6 +74,9 @@ function attachGridInteractions(container) {
         }
 
         gridSelectRange(grid, state.gridLastClickedCell, rc);
+        
+        // 선택된 셀을 뷰포트 안으로 가져오기
+        bringActiveCellIntoView(container);
     });
 
     grid.addEventListener('contextmenu', (event) => {
@@ -200,6 +206,8 @@ function attachGridInteractions(container) {
             gridSetActiveCell(grid, container, newRow, newCol);
         }
 
+        // 선택된 셀을 뷰포트 안으로 가져오기
+        bringActiveCellIntoView(container);
         event.preventDefault();
     });
 

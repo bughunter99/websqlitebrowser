@@ -65,6 +65,9 @@ function gridSelectRange(grid, start, end) {
             state.selectedCells.add(getGridCellKey(r, c));
         }
     }
+    
+    // 범위 선택 후 활성 셀을 끝점으로 업데이트
+    state.activeCell = { row: end.row, col: end.col };
     updateGridSelectionDisplay(grid);
 }
 
