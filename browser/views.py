@@ -53,9 +53,43 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 		if not current_path.exists() or not current_path.is_dir():
 			raise SuspiciousOperation('Directory does not exist.')
 
-		entries = []
+		# Pagination parameters
+		limit = int(request.GET.get('limit', '500'))
+		offset = int(request.GET.get('offset', '0'))
+		limit = min(max(limit, 50), 1000)  # 50-1000 range
+		offset = max(offset, 0)
+
+		all_entries = []
 		try:
-			for child in sorted(current_path.iterdir(), key=lambda item: (item.is_file(), item.name.lower())):
+			# Sort first, then paginate
+			all_entries = sorted(
+				current_path.iterdir(),
+				key=lambda item: (item.is_file(), item.name.lower())
+			)
+		except PermissionError as e:
+			# 권한 거부: 부분 결과와 에러 메시지 함께 반환
+			return JsonResponse(
+				{
+					'current_path': relative_to_root(current_path),
+					'current_abs_path': str(current_path),
+					'parent_path': '' if current_path == explorer_top_root() else relative_to_root(current_path.parent),
+					'entries': [],
+					'stats': directory_stats(current_path),
+					'total_entries': 0,
+					'offset': offset,
+					'limit': limit,
+					'warning': f'Permission denied reading some entries: {str(e)}',
+					'error_code': 'PERMISSION_DENIED',
+				}
+			)
+
+		# Serialize visible entries only
+		total_count = len(all_entries)
+		visible_entries = all_entries[offset:offset + limit]
+
+		entries = []
+		for child in visible_entries:
+			try:
 				stat = child.stat()
 				size_bytes = stat.st_size if child.is_file() else 0
 				entries.append(
@@ -69,19 +103,9 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 						'modified_at': format_modified(stat.st_mtime),
 					}
 				)
-		except PermissionError as e:
-			# 권한 거부: 부분 결과와 에러 메시지 함께 반환
-			return JsonResponse(
-				{
-					'current_path': relative_to_root(current_path),
-					'current_abs_path': str(current_path),
-					'parent_path': '' if current_path == explorer_top_root() else relative_to_root(current_path.parent),
-					'entries': entries,
-					'stats': directory_stats(current_path),
-					'warning': f'Permission denied reading some entries: {str(e)}',
-					'error_code': 'PERMISSION_DENIED',
-				}
-			)
+			except (OSError, PermissionError):
+				# Skip entries we can't stat
+				pass
 
 		parent = ''
 		if current_path != explorer_top_root():
@@ -94,6 +118,10 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 				'parent_path': parent,
 				'entries': entries,
 				'stats': directory_stats(current_path),
+				'total_entries': total_count,
+				'offset': offset,
+				'limit': limit,
+				'has_more': (offset + limit) < total_count,
 			}
 		)
 	except PermissionError as error:

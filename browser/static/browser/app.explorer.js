@@ -7,7 +7,7 @@
 /**
  * 파일 탐색기 렌더링
  */
-function renderExplorer(treeData) {
+function renderExplorer(treeData, append = false) {
     const entries = Array.isArray(treeData.entries) ? treeData.entries : [];
     const filterQuery = String(state.explorerFilter || '').trim().toLowerCase();
     const head = `
@@ -19,7 +19,7 @@ function renderExplorer(treeData) {
     `;
 
     const allEntries = [];
-    if (treeData.parent_path) {
+    if (!append && treeData.parent_path) {
         allEntries.push({
             name: '../',
             path: treeData.parent_path || '',
@@ -49,7 +49,11 @@ function renderExplorer(treeData) {
         `;
     }).join('');
 
-    domElements.explorerList.innerHTML = head + rows;
+    if (append) {
+        domElements.explorerList.innerHTML += rows;
+    } else {
+        domElements.explorerList.innerHTML = head + rows;
+    }
 }
 
 /**
@@ -65,11 +69,24 @@ function setExplorerFilter(value) {
 /**
  * 파일 트리 로드
  */
-async function loadTree(path = '') {
+async function loadTree(path = '', offset = 0, append = false) {
     try {
-        const data = /** @type {any} */ (await requestJson(`/api/tree/?path=${encodeURIComponent(path)}`));
-        state.currentPath = data.current_path;
-        state.lastTreeData = data;
+        const url = `/api/tree/?path=${encodeURIComponent(path)}&offset=${offset}&limit=500`;
+        const data = /** @type {any} */ (await requestJson(url));
+        
+        // 새로운 경로이거나 처음 로드인 경우 초기화
+        if (offset === 0 || !append) {
+            state.currentPath = data.current_path;
+            state.lastTreeData = { ...data };
+            state.explorerPaginationOffset = 0;
+        } else {
+            // 기존 entries에 새 entries 추가
+            if (state.lastTreeData) {
+                state.lastTreeData.entries.push(...data.entries);
+            }
+            state.explorerPaginationOffset = offset + data.limit;
+        }
+        
         const displayPath = data.current_abs_path || `repository${data.current_path ? `/${data.current_path}` : ''}`;
         domElements.currentPath.textContent = displayPath;
         outputLog(`DIR ${domElements.currentPath.textContent}`);
@@ -94,7 +111,11 @@ async function loadTree(path = '') {
             `disk ${Number(disk.used_percent || 0).toFixed(1)}%`,
         ].join(' | ');
 
-        renderExplorer(data);
+        // Pagination 정보 저장
+        state.explorerTotalEntries = data.total_entries || 0;
+        state.explorerHasMore = data.has_more || false;
+        
+        renderExplorer(data, append);
     } catch (error) {
         // @ts-ignore - error handling
         const errorMsg = error?.message || String(error);
@@ -124,6 +145,26 @@ function wireExplorerPanel() {
         explorerFilter.addEventListener('input', (event) => {
             const input = /** @type {HTMLInputElement} */ (event.target);
             setExplorerFilter(input.value || '');
+            // Infinite scroll listener
+            let scrollLoadPending = false;
+            domElements.explorerList.addEventListener('scroll', (event) => {
+                if (scrollLoadPending || !state.explorerHasMore) {
+                    return;
+                }
+        
+                const elem = /** @type {HTMLElement} */ (event.target);
+                const threshold = 200;
+                const isNearBottom = elem.scrollHeight - elem.scrollTop - elem.clientHeight < threshold;
+        
+                if (isNearBottom) {
+                    scrollLoadPending = true;
+                    const nextOffset = state.explorerPaginationOffset || 0;
+                    loadTree(state.currentPath, nextOffset, true).finally(() => {
+                        scrollLoadPending = false;
+                    });
+                }
+            });
+
         });
     }
 
