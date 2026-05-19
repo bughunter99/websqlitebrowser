@@ -221,7 +221,7 @@ function wireExplorerPanel() {
         const selectRow = (row) => {
             domElements.explorerList.querySelectorAll('.explorer-row').forEach((item) => item.classList.remove('selected'));
             row.classList.add('selected');
-            row.scrollIntoView({ block: 'nearest' });
+            row.scrollIntoView({ block: 'start' });
             state.selectedExplorerPath = row.dataset.path || '';
         };
 
@@ -273,8 +273,28 @@ function wireExplorerPanel() {
             nextIndex = 0;
         } else if (event.key === 'Home') {
             nextIndex = 0;
+            // Home 키일 때 스크롤을 맨 위로 이동
+            domElements.explorerList.scrollTop = 0;
+            // 가상화된 요소가 렌더링되도록 잠시 기다렸다가 rows 재계산
+            requestAnimationFrame(() => {
+                const updatedRows = Array.from(domElements.explorerList.querySelectorAll('.explorer-row'));
+                if (updatedRows.length > 0) {
+                    selectRow(updatedRows[0]);
+                }
+            });
+            return;
         } else if (event.key === 'End') {
             nextIndex = rows.length - 1;
+            // End 키일 때 스크롤을 맨 아래로 이동
+            domElements.explorerList.scrollTop = domElements.explorerList.scrollHeight;
+            // 가상화된 요소가 렌더링되도록 잠시 기다렸다가 rows 재계산
+            requestAnimationFrame(() => {
+                const updatedRows = Array.from(domElements.explorerList.querySelectorAll('.explorer-row'));
+                if (updatedRows.length > 0) {
+                    selectRow(updatedRows[updatedRows.length - 1]);
+                }
+            });
+            return;
         } else if (event.key === 'ArrowUp') {
             nextIndex = Math.max(0, nextIndex - 1);
         } else if (event.key === 'PageUp') {

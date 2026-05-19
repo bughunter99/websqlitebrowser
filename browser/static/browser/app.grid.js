@@ -110,14 +110,26 @@ function renderVirtualizedTable(target, columns, rows, sortState = null) {
     const columnWidths = [36, ...columns.map((column) => getInitialColumnWidthByHeader(column))];
     const minColumnWidth = 80;
     const getTemplateColumns = () => columnWidths.map((width) => `${width}px`).join(' ');
+    const getTotalGridWidth = () => columnWidths.reduce((sum, width) => sum + width, 0);
     const applyTemplateColumns = () => {
         const template = getTemplateColumns();
+        const totalWidth = getTotalGridWidth();
         const head = target.querySelector('.virtual-grid-head');
         if (head) {
             head.style.gridTemplateColumns = template;
+            head.style.width = `${totalWidth}px`;
+        }
+        const spacer = target.querySelector('#virtual-grid-spacer');
+        if (spacer) {
+            spacer.style.width = `${totalWidth}px`;
+        }
+        const rowsLayer = target.querySelector('#virtual-grid-rows');
+        if (rowsLayer) {
+            rowsLayer.style.width = `${totalWidth}px`;
         }
         target.querySelectorAll('.virtual-grid-tr').forEach((rowEl) => {
             rowEl.style.gridTemplateColumns = template;
+            rowEl.style.width = `${totalWidth}px`;
         });
     };
 
@@ -143,6 +155,7 @@ function renderVirtualizedTable(target, columns, rows, sortState = null) {
     const body = target.querySelector('#virtual-grid-body');
     const spacer = target.querySelector('#virtual-grid-spacer');
     const rowsLayer = target.querySelector('#virtual-grid-rows');
+    const head = target.querySelector('.virtual-grid-head');
     if (!body || !spacer || !rowsLayer) {
         return;
     }
@@ -172,8 +185,15 @@ function renderVirtualizedTable(target, columns, rows, sortState = null) {
             const cells = columns.map((column, columnIndex) => {
                 return `<div class="virtual-grid-td" data-row="${rowIndex}" data-col="${columnIndex}">${escapeHtml(row[column] ?? '')}</div>`;
             }).join('');
-            return `<div class="virtual-grid-tr" style="grid-template-columns:${getTemplateColumns()};"><div class="virtual-grid-td row-index-cell">${rowIndex + 1}</div>${cells}</div>`;
+            return `<div class="virtual-grid-tr" style="grid-template-columns:${getTemplateColumns()}; width:${getTotalGridWidth()}px;"><div class="virtual-grid-td row-index-cell">${rowIndex + 1}</div>${cells}</div>`;
         }).join('');
+    };
+
+    const syncHeaderScroll = () => {
+        if (!head) {
+            return;
+        }
+        head.style.transform = `translateX(${-body.scrollLeft}px)`;
     };
 
     const resizers = Array.from(target.querySelectorAll('.virtual-grid-col-resizer'));
@@ -214,7 +234,12 @@ function renderVirtualizedTable(target, columns, rows, sortState = null) {
         });
     });
 
-    body.addEventListener('scroll', renderWindow);
+    body.addEventListener('scroll', () => {
+        renderWindow();
+        syncHeaderScroll();
+    });
+    applyTemplateColumns();
+    syncHeaderScroll();
     renderWindow();
 }
 
