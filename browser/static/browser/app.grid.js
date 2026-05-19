@@ -194,6 +194,11 @@ function renderVirtualizedTable(target, columns, rows, sortState = null) {
             }).join('');
             return `<div class="virtual-grid-tr" style="grid-template-columns:${getTemplateColumns()}; width:${getTotalGridWidth()}px;"><div class="virtual-grid-td row-index-cell">${rowIndex + 1}</div>${cells}</div>`;
         }).join('');
+
+        // Virtualized rows are recreated on vertical scroll, so re-apply active/selected classes.
+        if (typeof updateGridSelectionDisplay === 'function' && wrap === document.activeElement) {
+            updateGridSelectionDisplay(wrap);
+        }
     };
 
     const syncHeaderScroll = () => {
