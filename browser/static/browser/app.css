@@ -675,17 +675,20 @@
             display: flex;
             align-items: center;
             gap: 6px;
-            min-height: 14px;
-            padding: 0 4px;
-            border: 1px solid var(--line);
+            min-height: 18px;
+            padding: 1px 6px;
+            border: 1px solid var(--line-strong);
             border-radius: 3px;
-            background: linear-gradient(180deg, #edf3fb, #dbe4f2);
-            color: var(--accent-ink);
-            font-size: 0.56rem;
+            background: linear-gradient(180deg, #f2f2f2, #d8d8d8);
+            color: var(--text);
+            font-size: calc(0.66rem * var(--explorer-scale));
+            font-weight: 400;
+            font-variant-numeric: tabular-nums;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            line-height: 1;
+            line-height: 1.2;
+            box-shadow: inset 1px 1px 0 #ffffff, inset -1px -1px 0 #b7b7b7;
         }
 
         .button-row {
