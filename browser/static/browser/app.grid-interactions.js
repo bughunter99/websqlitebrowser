@@ -12,6 +12,9 @@ function attachGridInteractions(container) {
         return;
     }
 
+    // Grid를 focusable하게 만들기 (프로그래매틱 focus만 가능)
+    grid.setAttribute('tabindex', '-1');
+    
     initResultGridColumnResize(container);
 
     const getRowCol = (cell) => {
@@ -203,7 +206,7 @@ function attachGridInteractions(container) {
 }
 
 /**
- * 활성 셀을 뷰포트 안에 위치시키기
+ * 활성 셀을 뷰포트 안에 위치시키기 (세로/가로 스크롤 모두 처리)
  */
 function bringActiveCellIntoView(container) {
     if (!state.activeCell) {
@@ -220,10 +223,18 @@ function bringActiveCellIntoView(container) {
         const cellRect = cell.getBoundingClientRect();
         const bodyRect = body.getBoundingClientRect();
 
+        // 세로 스크롤 처리
         if (cellRect.top < bodyRect.top) {
             body.scrollTop -= bodyRect.top - cellRect.top;
         } else if (cellRect.bottom > bodyRect.bottom) {
             body.scrollTop += cellRect.bottom - bodyRect.bottom;
+        }
+
+        // 가로 스크롤 처리
+        if (cellRect.left < bodyRect.left) {
+            body.scrollLeft -= bodyRect.left - cellRect.left;
+        } else if (cellRect.right > bodyRect.right) {
+            body.scrollLeft += cellRect.right - bodyRect.right;
         }
     }
 }
