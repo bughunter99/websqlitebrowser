@@ -42,6 +42,22 @@ function getGridCellKey(row, col) {
 }
 
 function updateGridSelectionDisplay(grid) {
+    if (!grid) {
+        return;
+    }
+
+    if (state.selectedCells.size <= 1 && state.activeCell) {
+        grid.querySelectorAll('.is-selected, .is-active').forEach((cell) => {
+            cell.classList.remove('is-selected', 'is-active');
+        });
+
+        const activeCell = grid.querySelector(`[data-row="${state.activeCell.row}"][data-col="${state.activeCell.col}"]`);
+        if (activeCell) {
+            activeCell.classList.add('is-selected', 'is-active');
+        }
+        return;
+    }
+
     grid.querySelectorAll('td, .virtual-grid-td').forEach((cell) => {
         const rc = getGridCellRowCol(cell);
         if (!rc) {

@@ -106,7 +106,7 @@ function renderVirtualizedTable(target, columns, rows, sortState = null) {
 
     const sortedRows = sortRowsByColumn(rows, columns, sortState);
     const rowHeight = 22;
-    const overscan = 10;
+    const overscan = 4;
     const columnWidths = [36, ...columns.map((column) => getInitialColumnWidthByHeader(column))];
     const minColumnWidth = 80;
     const getTemplateColumns = () => columnWidths.map((width) => `${width}px`).join(' ');
@@ -156,8 +156,15 @@ function renderVirtualizedTable(target, columns, rows, sortState = null) {
     const spacer = target.querySelector('#virtual-grid-spacer');
     const rowsLayer = target.querySelector('#virtual-grid-rows');
     const head = target.querySelector('.virtual-grid-head');
+    const wrap = target.querySelector('.virtual-grid-wrap');
     if (!body || !spacer || !rowsLayer) {
         return;
+    }
+
+    if (wrap) {
+        wrap.dataset.maxRow = String(Math.max(0, sortedRows.length - 1));
+        wrap.dataset.maxCol = String(Math.max(0, columns.length - 1));
+        wrap.dataset.rowHeight = String(rowHeight);
     }
 
     spacer.style.height = `${sortedRows.length * rowHeight}px`;

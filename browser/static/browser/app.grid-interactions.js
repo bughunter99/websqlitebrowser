@@ -12,8 +12,13 @@ function attachGridInteractions(container) {
         return;
     }
 
+    if (grid.dataset.interactionsInit === '1') {
+        return;
+    }
+    grid.dataset.interactionsInit = '1';
+
     // Grid를 focusable하게 만들기 (프로그래매틱 focus만 가능)
-    grid.setAttribute('tabindex', '-1');
+    grid.setAttribute('tabindex', '0');
     
     initResultGridColumnResize(container);
 
@@ -25,9 +30,13 @@ function attachGridInteractions(container) {
 
 
     // Mouse interactions
+    grid.addEventListener('focus', () => {
+        activateGridSelectionContext(grid, { preserveSelection: true });
+    });
+
     grid.addEventListener('mousedown', (event) => {
         activateGridSelectionContext(grid, { preserveSelection: false });
-        grid.focus();
+        grid.focus({ preventScroll: true });
         const cell = event.target.closest('td, .virtual-grid-td');
         if (!cell) {
             return;
@@ -161,13 +170,20 @@ function attachGridInteractions(container) {
             return;
         }
 
-        const allCells = Array.from(grid.querySelectorAll('td, .virtual-grid-td')).map((cell) => getRowCol(cell)).filter(Boolean);
-        if (!allCells.length) {
-            return;
-        }
+        const dataMaxRow = Number(grid.dataset.maxRow);
+        const dataMaxCol = Number(grid.dataset.maxCol);
 
-        const maxRow = Math.max(...allCells.map((rc) => rc.row));
-        const maxCol = Math.max(...allCells.map((rc) => rc.col));
+        let maxRow = Number.isFinite(dataMaxRow) ? dataMaxRow : -1;
+        let maxCol = Number.isFinite(dataMaxCol) ? dataMaxCol : -1;
+
+        if (maxRow < 0 || maxCol < 0) {
+            const allCells = Array.from(grid.querySelectorAll('td, .virtual-grid-td')).map((cell) => getRowCol(cell)).filter(Boolean);
+            if (!allCells.length) {
+                return;
+            }
+            maxRow = Math.max(...allCells.map((rc) => rc.row));
+            maxCol = Math.max(...allCells.map((rc) => rc.col));
+        }
 
         let newRow = state.activeCell.row;
         let newCol = state.activeCell.col;
@@ -209,6 +225,7 @@ function attachGridInteractions(container) {
         // 선택된 셀을 뷰포트 안으로 가져오기
         bringActiveCellIntoView(container);
         event.preventDefault();
+        event.stopPropagation();
     });
 
     gridActivateInitialCell(grid);
@@ -223,29 +240,42 @@ function bringActiveCellIntoView(container) {
         return;
     }
 
-    const cell = container.querySelector(`[data-row="${state.activeCell.row}"][data-col="${state.activeCell.col}"]`);
+    const virtualBody = container.querySelector('.virtual-grid-body');
+    const tableWrap = container.querySelector('.table-wrap');
+    const scrollContainer = virtualBody || tableWrap || container;
+    const selector = `[data-row="${state.activeCell.row}"][data-col="${state.activeCell.col}"]`;
+    let cell = container.querySelector(selector);
+
+    if (virtualBody && !cell) {
+        const wrap = container.querySelector('.virtual-grid-wrap');
+        const rowHeight = Number(wrap?.dataset.rowHeight || 22) || 22;
+        const targetTop = Math.max(0, state.activeCell.row * rowHeight);
+        virtualBody.scrollTop = targetTop;
+        cell = container.querySelector(selector);
+    }
+
     if (!cell) {
         return;
     }
 
-    const body = container.querySelector('.virtual-grid-body');
-    if (body) {
-        const cellRect = cell.getBoundingClientRect();
-        const bodyRect = body.getBoundingClientRect();
+    if (typeof cell.scrollIntoView === 'function') {
+        cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        return;
+    }
 
-        // 세로 스크롤 처리
-        if (cellRect.top < bodyRect.top) {
-            body.scrollTop -= bodyRect.top - cellRect.top;
-        } else if (cellRect.bottom > bodyRect.bottom) {
-            body.scrollTop += cellRect.bottom - bodyRect.bottom;
-        }
+    const cellRect = cell.getBoundingClientRect();
+    const containerRect = scrollContainer.getBoundingClientRect();
 
-        // 가로 스크롤 처리
-        if (cellRect.left < bodyRect.left) {
-            body.scrollLeft -= bodyRect.left - cellRect.left;
-        } else if (cellRect.right > bodyRect.right) {
-            body.scrollLeft += cellRect.right - bodyRect.right;
-        }
+    if (cellRect.top < containerRect.top) {
+        scrollContainer.scrollTop += cellRect.top - containerRect.top;
+    } else if (cellRect.bottom > containerRect.bottom) {
+        scrollContainer.scrollTop += cellRect.bottom - containerRect.bottom;
+    }
+
+    if (cellRect.left < containerRect.left) {
+        scrollContainer.scrollLeft += cellRect.left - containerRect.left;
+    } else if (cellRect.right > containerRect.right) {
+        scrollContainer.scrollLeft += cellRect.right - containerRect.right;
     }
 }
 

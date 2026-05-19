@@ -1366,7 +1366,8 @@
         .virtual-grid-body {
             position: relative;
             min-height: 0;
-            overflow: auto;
+            overflow-x: auto;
+            overflow-y: auto;
             background: #ffffff;
         }
 
