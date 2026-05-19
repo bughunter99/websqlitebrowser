@@ -184,13 +184,7 @@ function wireExplorerPanel() {
         }
     });
 
-    domElements.explorerList.addEventListener('dblclick', (event) => {
-        const target = /** @type {Element | null} */ (event.target instanceof Element ? event.target : null);
-        const row = /** @type {HTMLElement | null} */ (target ? target.closest('.explorer-row') : null);
-        if (!row) {
-            return;
-        }
-
+    const activateExplorerRow = (row) => {
         const targetPath = row.dataset.path || '';
         if (row.dataset.type === 'parent' || row.dataset.type === 'directory') {
             outputLog(`NAV ${targetPath || '..'}`);
@@ -200,10 +194,19 @@ function wireExplorerPanel() {
         if (row.dataset.isSqlite === '1') {
             openDatabase(targetPath);
         }
+    };
+
+    domElements.explorerList.addEventListener('dblclick', (event) => {
+        const target = /** @type {Element | null} */ (event.target instanceof Element ? event.target : null);
+        const row = /** @type {HTMLElement | null} */ (target ? target.closest('.explorer-row') : null);
+        if (!row) {
+            return;
+        }
+        activateExplorerRow(row);
     });
 
     domElements.explorerList.addEventListener('keydown', (event) => {
-        const handledKeys = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End']);
+        const handledKeys = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', 'Enter', ' ', 'Spacebar', 'ArrowRight', 'ArrowLeft']);
         if (!handledKeys.has(event.key)) {
             return;
         }
@@ -214,6 +217,53 @@ function wireExplorerPanel() {
         }
 
         event.preventDefault();
+
+        const selectRow = (row) => {
+            domElements.explorerList.querySelectorAll('.explorer-row').forEach((item) => item.classList.remove('selected'));
+            row.classList.add('selected');
+            row.scrollIntoView({ block: 'nearest' });
+            state.selectedExplorerPath = row.dataset.path || '';
+        };
+
+        const getSelectedOrFirstRow = () => {
+            const selected = /** @type {HTMLElement | null} */ (rows.find((row) => row.classList.contains('selected')) || null);
+            if (selected) {
+                return selected;
+            }
+            const firstRow = /** @type {HTMLElement | null} */ (rows[0] || null);
+            if (firstRow) {
+                selectRow(firstRow);
+            }
+            return firstRow;
+        };
+
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+            const selectedRow = getSelectedOrFirstRow();
+            if (!selectedRow) {
+                return;
+            }
+            activateExplorerRow(selectedRow);
+            return;
+        }
+
+        if (event.key === 'ArrowRight') {
+            const selectedRow = getSelectedOrFirstRow();
+            if (!selectedRow) {
+                return;
+            }
+            activateExplorerRow(selectedRow);
+            return;
+        }
+
+        if (event.key === 'ArrowLeft') {
+            const parentPath = String(state.lastTreeData?.parent_path || '');
+            if (!parentPath) {
+                return;
+            }
+            outputLog(`NAV ${parentPath || '..'}`);
+            loadTree(parentPath);
+            return;
+        }
 
         const currentIndex = rows.findIndex((row) => row.classList.contains('selected'));
         let nextIndex = currentIndex;
@@ -240,10 +290,7 @@ function wireExplorerPanel() {
             return;
         }
 
-        domElements.explorerList.querySelectorAll('.explorer-row').forEach((row) => row.classList.remove('selected'));
-        nextRow.classList.add('selected');
-        nextRow.scrollIntoView({ block: 'nearest' });
-        state.selectedExplorerPath = nextRow.dataset.path || '';
+        selectRow(nextRow);
 
         if (nextRow.dataset.type === 'file' && nextRow.dataset.isSqlite === '1') {
             openDatabase(state.selectedExplorerPath);
