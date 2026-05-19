@@ -15,6 +15,7 @@ from django.utils.html import escape
 SQLITE_SUFFIXES = {'.db', '.sqlite', '.sqlite3'}
 READ_ONLY_PREFIXES = ('select', 'with', 'pragma', 'explain')
 DEFAULT_ROW_LIMIT = 100
+MAX_TABLE_LOAD_ROWS = 10000
 DEFAULT_SAMPLE_LIMIT = 3
 SETTINGS_FILENAME = '.websqlitebrowser-settings.json'
 DEFAULT_LLM_ENDPOINT = 'https://api.anthropic.com/v1/messages'

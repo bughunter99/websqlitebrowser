@@ -10,6 +10,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from .services import (
 	DEFAULT_ROW_LIMIT,
+	MAX_TABLE_LOAD_ROWS,
 	build_chat_context,
 	build_folder_chat_context,
 	build_multi_folder_chat_context,
@@ -168,13 +169,12 @@ def table_rows(request: HttpRequest) -> JsonResponse:
 		escaped_table = quote_identifier(table_name)
 		fetch_all = request.GET.get('all', '') in {'1', 'true', 'True'}
 		limit: int | None = None
-		if not fetch_all:
+		if fetch_all:
+			limit = MAX_TABLE_LOAD_ROWS
+		else:
 			limit = min(max(int(request.GET.get('limit', DEFAULT_ROW_LIMIT)), 1), 500)
 		with connect_database(database_path) as connection:
-			if limit is None:
-				cursor = connection.execute(f'SELECT * FROM "{escaped_table}"')
-			else:
-				cursor = connection.execute(f'SELECT * FROM "{escaped_table}" LIMIT {limit}')
+			cursor = connection.execute(f'SELECT * FROM "{escaped_table}"')
 			payload = serialize_rows(cursor, limit=limit)
 
 		return JsonResponse(payload)
