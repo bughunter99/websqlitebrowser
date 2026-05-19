@@ -4,6 +4,7 @@ import re
 import shutil
 import sqlite3
 import tempfile
+import gzip
 from pathlib import Path
 from unittest import mock
 
@@ -57,6 +58,47 @@ class BrowserApiTests(TestCase):
 		self.assertEqual(tables[0]['columns'][0]['name'], 'id')
 		self.assertIn('create_sql', tables[0])
 		self.assertIn('indexes', tables[0])
+
+    def test_repository_tree_lists_gzip_sqlite_file(self):
+        gzip_path = self.repository_root / 'sample.db.gz'
+        with open(self.repository_root / 'sample.db', 'rb') as source, gzip.open(gzip_path, 'wb') as target:
+            shutil.copyfileobj(source, target)
+
+        response = self.client.get('/api/tree/')
+        self.assertEqual(response.status_code, 200)
+
+        payload = response.json()
+        entry = next((item for item in payload['entries'] if item['name'] == 'sample.db.gz'), None)
+        self.assertIsNotNone(entry)
+        self.assertTrue(entry['is_sqlite'])
+
+    def test_open_database_from_gzip_sqlite(self):
+        gzip_path = self.repository_root / 'sample.db.gz'
+        with open(self.repository_root / 'sample.db', 'rb') as source, gzip.open(gzip_path, 'wb') as target:
+            shutil.copyfileobj(source, target)
+
+        response = self.client.get('/api/database/', {'path': 'sample.db.gz'})
+        self.assertEqual(response.status_code, 200)
+
+        payload = response.json()
+        tables = payload['database']['tables']
+        self.assertEqual([table['name'] for table in tables], ['customers', 'orders', 'sample'])
+
+    def test_run_query_from_gzip_sqlite(self):
+        gzip_path = self.repository_root / 'sample.db.gz'
+        with open(self.repository_root / 'sample.db', 'rb') as source, gzip.open(gzip_path, 'wb') as target:
+            shutil.copyfileobj(source, target)
+
+        response = self.client.post(
+            '/api/query/',
+            data=json.dumps({'path': 'sample.db.gz', 'sql': 'SELECT COUNT(*) AS count FROM customers'}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        payload = response.json()
+        self.assertEqual(payload['columns'], ['count'])
+        self.assertEqual(payload['rows'][0]['count'], 3)
 
 	def test_settings_test_requires_configuration(self):
 		response = self.client.post('/api/settings/test/', data=json.dumps({}), content_type='application/json')

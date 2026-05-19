@@ -3,6 +3,9 @@ import os
 import re
 import shutil
 import sqlite3
+import gzip
+import hashlib
+import tempfile
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -13,6 +16,8 @@ from django.core.exceptions import SuspiciousOperation
 from django.utils.html import escape
 
 SQLITE_SUFFIXES = {'.db', '.sqlite', '.sqlite3'}
+GZIP_SUFFIX = '.gz'
+SQLITE_MAGIC_HEADER = b'SQLite format 3\x00'
 READ_ONLY_PREFIXES = ('select', 'with', 'pragma', 'explain')
 DEFAULT_ROW_LIMIT = 100
 MAX_TABLE_LOAD_ROWS = 10000
@@ -112,7 +117,21 @@ def resolve_repo_path(relative_path: str = '') -> Path:
 
 
 def is_sqlite_file(path: Path) -> bool:
-    return path.is_file() and path.suffix.lower() in SQLITE_SUFFIXES
+    if not path.is_file():
+        return False
+
+    suffix = path.suffix.lower()
+    if suffix in SQLITE_SUFFIXES:
+        return True
+
+    if suffix == GZIP_SUFFIX:
+        try:
+            with gzip.open(path, 'rb') as handle:
+                return handle.read(len(SQLITE_MAGIC_HEADER)) == SQLITE_MAGIC_HEADER
+        except OSError:
+            return False
+
+    return False
 
 
 def relative_to_root(path: Path) -> str:
@@ -367,8 +386,44 @@ def parse_json_object_setting(raw_value: str, field_name: str) -> dict[str, obje
     return parsed
 
 
+def _gzip_cache_root() -> Path:
+    cache_root = Path(tempfile.gettempdir()) / 'websqlitebrowser-gz-cache'
+    cache_root.mkdir(parents=True, exist_ok=True)
+    return cache_root
+
+
+def _resolve_sqlite_source_path(database_path: Path) -> Path:
+    if database_path.suffix.lower() != GZIP_SUFFIX:
+        return database_path
+
+    file_stat = database_path.stat()
+    cache_key_source = f'{database_path.resolve()}::{file_stat.st_size}::{file_stat.st_mtime_ns}'
+    cache_key = hashlib.sha256(cache_key_source.encode('utf-8')).hexdigest()
+    cache_path = _gzip_cache_root() / f'{cache_key}.sqlite3'
+
+    if cache_path.exists() and cache_path.is_file():
+        return cache_path
+
+    temp_path = cache_path.with_suffix('.tmp')
+    try:
+        with gzip.open(database_path, 'rb') as source, temp_path.open('wb') as target:
+            header = source.read(len(SQLITE_MAGIC_HEADER))
+            if header != SQLITE_MAGIC_HEADER:
+                raise SuspiciousOperation('Selected .gz file does not contain a SQLite database.')
+            target.write(header)
+            shutil.copyfileobj(source, target, length=1024 * 1024)
+        temp_path.replace(cache_path)
+    except OSError as error:
+        if temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+        raise SuspiciousOperation(f'Failed to read gzip SQLite file: {error}')
+
+    return cache_path
+
+
 def connect_database(database_path: Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(f'file:{database_path}?mode=ro', uri=True)
+    source_path = _resolve_sqlite_source_path(database_path)
+    connection = sqlite3.connect(f'file:{source_path}?mode=ro', uri=True)
     connection.row_factory = sqlite3.Row
     return connection
 
