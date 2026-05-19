@@ -18,15 +18,16 @@ function renderTableResultState(target, columns, rows, options = {}) {
     const limit = Number(options.limit || 0);
     const truncated = Boolean(options.truncated);
 
+    let gridContainer = target;
     if (truncated && limit > 0) {
         target.innerHTML = `<div class="table-result-notice">Rows: ${rowCount} / capped at ${limit}</div>`;
-        const gridHost = document.createElement('div');
-        target.appendChild(gridHost);
-        renderResultContent(gridHost, columns, rows);
-    } else {
-        renderResultContent(target, columns, rows);
+        gridContainer = document.createElement('div');
+        gridContainer.className = 'table-grid-container';
+        target.appendChild(gridContainer);
     }
-    attachGridInteractions(target);
+
+    renderResultContent(gridContainer, columns, rows);
+    attachGridInteractions(gridContainer);
 }
 
 function renderTableErrorState(target, message) {

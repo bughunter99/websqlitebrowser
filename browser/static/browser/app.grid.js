@@ -226,12 +226,8 @@ function renderResultContent(target, columns, rows) {
     const sourceRows = Array.isArray(rows) ? rows : [];
     gridRenderState.set(target, { columns, rows: sourceRows, sort: renderState.sort || null });
 
-    if (sourceRows.length >= 1000) {
+        // 항상 가상화 그리드 사용 (Query 결과와 동일한 스타일)
         renderVirtualizedTable(target, columns, sourceRows, renderState.sort || null);
-        initGridSorting(target);
-        return;
-    }
-    target.innerHTML = renderTable(columns, sourceRows, renderState.sort || null);
     initGridSorting(target);
 }
 
