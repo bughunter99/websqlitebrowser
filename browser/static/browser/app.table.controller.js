@@ -45,9 +45,13 @@ async function loadTable(tableName, tabId = state.tableTabIds.get(tableName)) {
             outputLog(`TABLE STALE IGNORED ${tableName} request=${requestId} elapsed=${Date.now() - startedAt}ms`, 'warn');
             return;
         }
-        renderTableResultState(target, data.columns, data.rows);
+        renderTableResultState(target, data.columns, data.rows, {
+            rowCount: data.row_count,
+            limit: data.limit,
+            truncated: data.truncated,
+        });
         state.loadedTables.set(tableName, true);
-        outputLog(`TABLE END ${tableName} request=${requestId} elapsed=${Date.now() - startedAt}ms rows=${Number(data.row_count || data.rows?.length || 0)}`);
+        outputLog(`TABLE END ${tableName} request=${requestId} elapsed=${Date.now() - startedAt}ms rows=${Number(data.row_count || data.rows?.length || 0)}${data.truncated ? ` capped=${Number(data.limit || 0)}` : ''}`);
     } catch (error) {
         const isStale = state.tableLoadRequestIds.get(tableName) !== requestId
             || !state.currentDatabase

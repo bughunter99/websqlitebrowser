@@ -12,9 +12,20 @@ function setTableLoadingState(target) {
     target.textContent = '로딩 중...';
 }
 
-function renderTableResultState(target, columns, rows) {
+function renderTableResultState(target, columns, rows, options = {}) {
     target.className = '';
-    renderResultContent(target, columns, rows);
+    const rowCount = Number(options.rowCount || rows?.length || 0);
+    const limit = Number(options.limit || 0);
+    const truncated = Boolean(options.truncated);
+
+    if (truncated && limit > 0) {
+        target.innerHTML = `<div class="table-result-notice">Rows: ${rowCount} / capped at ${limit}</div>`;
+        const gridHost = document.createElement('div');
+        target.appendChild(gridHost);
+        renderResultContent(gridHost, columns, rows);
+    } else {
+        renderResultContent(target, columns, rows);
+    }
     attachGridInteractions(target);
 }
 

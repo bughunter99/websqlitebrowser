@@ -26,6 +26,7 @@ function attachGridInteractions(container) {
 
     // Mouse interactions
     grid.addEventListener('mousedown', (event) => {
+        activateGridSelectionContext(grid, { preserveSelection: false });
         grid.focus();
         const cell = event.target.closest('td, .virtual-grid-td');
         if (!cell) {
@@ -144,6 +145,7 @@ function attachGridInteractions(container) {
 
     // Keyboard interactions
     grid.addEventListener('keydown', (event) => {
+        activateGridSelectionContext(grid, { preserveSelection: true });
         if (!state.activeCell) {
             return;
         }

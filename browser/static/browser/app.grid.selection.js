@@ -2,6 +2,35 @@
  * app.grid.selection.js - Grid selection helpers
  */
 
+let activeGridElement = null;
+
+function clearGridSelectionDisplay(grid) {
+    if (!grid) {
+        return;
+    }
+    grid.querySelectorAll('td, .virtual-grid-td').forEach((cell) => {
+        cell.classList.remove('is-selected', 'is-active');
+    });
+}
+
+function activateGridSelectionContext(grid, options = {}) {
+    const preserveSelection = Boolean(options.preserveSelection);
+    if (activeGridElement === grid) {
+        return false;
+    }
+
+    clearGridSelectionDisplay(activeGridElement);
+    activeGridElement = grid;
+
+    if (!preserveSelection) {
+        state.selectedCells.clear();
+        state.activeCell = null;
+        state.gridLastClickedCell = null;
+    }
+
+    return true;
+}
+
 function getGridCellRowCol(cell) {
     const row = Number(cell.dataset.row);
     const col = Number(cell.dataset.col);
@@ -67,7 +96,8 @@ function gridSelectEntireRow(grid, rowIndex) {
 }
 
 function copySelectedGridCells() {
-    const selectedCells = Array.from(document.querySelectorAll('.result-grid td.is-selected, .virtual-grid-td.is-selected'));
+    const scope = activeGridElement || document;
+    const selectedCells = Array.from(scope.querySelectorAll('.result-grid td.is-selected, .virtual-grid-td.is-selected'));
     if (!selectedCells.length) {
         return false;
     }
@@ -109,6 +139,8 @@ function copySelectedGridCells() {
 }
 
 function gridActivateInitialCell(grid) {
+    activateGridSelectionContext(grid, { preserveSelection: false });
+
     if (state.activeCell) {
         return;
     }

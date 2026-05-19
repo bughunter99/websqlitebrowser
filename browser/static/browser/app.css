@@ -691,6 +691,17 @@
             box-shadow: inset 1px 1px 0 #ffffff, inset -1px -1px 0 #b7b7b7;
         }
 
+        .table-result-notice {
+            padding: 3px 6px;
+            border: 1px solid var(--line);
+            border-bottom: none;
+            background: linear-gradient(180deg, #f1f1f1, #dddddd);
+            color: var(--text);
+            font-size: 11px;
+            line-height: 1.2;
+            font-variant-numeric: tabular-nums;
+        }
+
         .button-row {
             display: flex;
             gap: 5px;
