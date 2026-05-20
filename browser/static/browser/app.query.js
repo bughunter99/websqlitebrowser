@@ -47,26 +47,36 @@ async function runQuery() {
             return;
         }
 
-        const caretPosition = sqlEditor.selectionStart;
-        const sqlStatements = sqlEditor.value.split(';');
-        let currentSql = '';
-        let position = 0;
+        const selectionStart = Number(sqlEditor.selectionStart || 0);
+        const selectionEnd = Number(sqlEditor.selectionEnd || 0);
 
-        for (const statement of sqlStatements) {
-            position += statement.length + 1; // 세미콜론 포함
-            if (caretPosition <= position) {
-                currentSql = statement.trim();
-                break;
+        let sql = '';
+        if (selectionEnd > selectionStart) {
+            // 선택 영역이 있으면 전체를 그대로 실행한다.
+            sql = sqlEditor.value.slice(selectionStart, selectionEnd).trim();
+        } else {
+            // 선택이 없으면 캐럿 위치의 단일 문장만 실행한다.
+            const caretPosition = selectionStart;
+            const sqlStatements = sqlEditor.value.split(';');
+            let currentSql = '';
+            let position = 0;
+
+            for (const statement of sqlStatements) {
+                position += statement.length + 1; // 세미콜론 포함
+                if (caretPosition <= position) {
+                    currentSql = statement.trim();
+                    break;
+                }
             }
+
+            sql = currentSql;
         }
 
-        if (!currentSql) {
+        if (!sql) {
             target.className = 'status-box error';
             target.textContent = '실행할 SQL 문을 찾을 수 없습니다.';
             return;
         }
-
-        const sql = currentSql; // 선택된 SQL 문만 실행
 
         const databasePath = state.currentDatabase.path;
         const requestId = state.queryRequestSeq + 1;

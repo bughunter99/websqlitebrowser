@@ -31,14 +31,19 @@ from .services import (
 	serialize_rows,
 	connect_database,
 	explorer_top_root,
+	ensure_sales_invoices_time_column,
 )
 
 
 def index(request: HttpRequest):
+	ensure_sales_invoices_time_column()
 	return render(
 		request,
 		'browser/index.html',
-		{'repository_root': settings.REPOSITORY_ROOT.name},
+		{
+			'repository_root': settings.REPOSITORY_ROOT.name,
+			'app_version': getattr(settings, 'VERSION', 'unknown'),
+		},
 	)
 
 

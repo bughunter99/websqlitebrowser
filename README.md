@@ -723,6 +723,23 @@ select * from table1 where time > sysdate - 1/24
 settings.py의 69번째 줄에서 VERSION is not defined 라고 에러나는데?
 
 
+내가 얘기한 버전을 출력하라는건 콘솔에 하라는게 아니라, web ui의 output에 출력하라는거였어. 그렇게 수정해줘.
+
+
+여기 sample db 만들어준거에 time 컬럼을 하나 추가해줘. invoices.db에 하나 추가해줘. 그걸로 sysdate 내가 테스트해볼께.
+
+
+아까 얘기한 주석 파싱이 다 안된거 같아. 다음으로 하면 앞에 쿼리만 실행되.
+--test는 주석이니까 아래를 전체 실행하면 두개 결과가 나와야 해.
+
+select *
+from invoices
+where rownum < 3;
+
+--test
+select *
+from invoices;
+
 
 
 /////////

@@ -428,6 +428,39 @@ def connect_database(database_path: Path) -> sqlite3.Connection:
     return connection
 
 
+def ensure_sales_invoices_time_column() -> None:
+    """Ensure repository/sales.db invoices has a time column for SYSDATE tests."""
+    sales_db_path = repository_root() / 'sales.db'
+    if not sales_db_path.exists() or not sales_db_path.is_file():
+        return
+
+    connection = sqlite3.connect(str(sales_db_path))
+    try:
+        table_exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND lower(name) = 'invoices' LIMIT 1"
+        ).fetchone()
+        if not table_exists:
+            return
+
+        columns = {
+            str(row[1]).lower()
+            for row in connection.execute('PRAGMA table_info("invoices")').fetchall()
+        }
+
+        if 'time' not in columns:
+            connection.execute('ALTER TABLE "invoices" ADD COLUMN "time" TEXT')
+
+        connection.execute(
+            """
+            UPDATE "invoices"
+            SET "time" = COALESCE("time", DATETIME('now', '-' || rowid || ' minutes'))
+            """
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def quote_identifier(identifier: str) -> str:
     return identifier.replace('"', '""')
 
