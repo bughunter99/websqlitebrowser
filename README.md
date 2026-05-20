@@ -720,6 +720,9 @@ select * from table1 where time > sysdate - 1/24
 그래? 이상하네. 똑같이 에러나는데? 프로그램 처음 시작할때, 소스의 버전이 출력되게 해줘. output에. 그래야 혹시 소스 버전 문제인지 알것 같아.
 
 
+settings.py의 69번째 줄에서 VERSION is not defined 라고 에러나는데?
+
+
 
 
 /////////
