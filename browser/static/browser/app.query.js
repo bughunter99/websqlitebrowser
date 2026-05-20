@@ -47,7 +47,27 @@ async function runQuery() {
             return;
         }
 
-        const sql = sqlEditor.value;
+        const caretPosition = sqlEditor.selectionStart;
+        const sqlStatements = sqlEditor.value.split(';');
+        let currentSql = '';
+        let position = 0;
+
+        for (const statement of sqlStatements) {
+            position += statement.length + 1; // 세미콜론 포함
+            if (caretPosition <= position) {
+                currentSql = statement.trim();
+                break;
+            }
+        }
+
+        if (!currentSql) {
+            target.className = 'status-box error';
+            target.textContent = '실행할 SQL 문을 찾을 수 없습니다.';
+            return;
+        }
+
+        const sql = currentSql; // 선택된 SQL 문만 실행
+
         const databasePath = state.currentDatabase.path;
         const requestId = state.queryRequestSeq + 1;
         state.queryRequestSeq = requestId;
