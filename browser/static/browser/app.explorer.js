@@ -35,7 +35,10 @@ function _explorerProgressText(progress) {
     const loadedDirectories = clampLoaded(progress.loadedDirectories, totalDirectories);
     const loadedFiles = clampLoaded(progress.loadedFiles, totalFiles);
     const percent = totalEntries > 0 ? Math.min(100, (loadedEntries / totalEntries) * 100) : 100;
-    return `${loadedEntries.toLocaleString()} / ${totalEntries.toLocaleString()} entries (${percent.toFixed(1)}%) | folders ${loadedDirectories.toLocaleString()} / ${totalDirectories.toLocaleString()} | files ${loadedFiles.toLocaleString()} / ${totalFiles.toLocaleString()}`;
+    const entriesText = `${loadedEntries.toLocaleString()} / ${totalEntries.toLocaleString()} entries (${percent.toFixed(1)}%)`;
+    const foldersText = `folders ${loadedDirectories.toLocaleString()} / ${totalDirectories.toLocaleString()}`;
+    const filesText = `files ${loadedFiles.toLocaleString()} / ${totalFiles.toLocaleString()}`;
+    return `${entriesText} | ${foldersText} | ${filesText}`;
 }
 
 /**
@@ -250,7 +253,7 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation, pro
             const loaded = offset;
             progress.loadedEntries = loaded;
             progress.totalEntries = data.total_entries || total;
-            if (loaded - lastProgressLogAt >= CHUNK || !data.has_more) {
+            if (loaded !== lastProgressLogAt || !data.has_more) {
                 outputLog(`Explorer loading ${_explorerProgressText(progress)}`);
                 lastProgressLogAt = loaded;
             }
