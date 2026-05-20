@@ -44,11 +44,12 @@ function _explorerProgressText(progress) {
 /**
  * 파일 탐색기 렌더링
  */
-function renderExplorer(treeData, append = false) {
+function renderExplorer(treeData, append = false, startOffset = 0) {
     const entries = Array.isArray(treeData.entries) ? treeData.entries : [];
     const filterQuery = String(state.explorerFilter || '').trim().toLowerCase();
     const head = `
         <div class="explorer-head">
+            <div style="text-align: right;">No.</div>
             <div>Name</div>
             <div style="text-align: right;">Size</div>
             <div style="text-align: right;">Modified</div>
@@ -66,17 +67,23 @@ function renderExplorer(treeData, append = false) {
             modified_at: '',
         });
     }
+    const numberedEntries = entries.map((entry, index) => ({
+        ...entry,
+        _orderNo: Number(startOffset) + index + 1,
+    }));
     const filteredEntries = filterQuery
-        ? entries.filter((entry) => String(entry.name || '').toLowerCase().includes(filterQuery))
-        : entries;
+        ? numberedEntries.filter((entry) => String(entry.name || '').toLowerCase().includes(filterQuery))
+        : numberedEntries;
     allEntries.push(...filteredEntries);
 
     const rows = allEntries.map((entry) => {
         const sizeText = entry.type === 'file' ? (entry.size_human || '0 B') : '';
+        const orderText = entry.type === 'parent' ? '' : Number(entry._orderNo || 0).toLocaleString();
         const selectedClass = state.selectedExplorerPath && state.selectedExplorerPath === entry.path ? ' selected' : '';
         const parentClass = entry.type === 'parent' ? ' parent-row' : '';
         return `
             <div class="explorer-row${selectedClass}${parentClass}" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.type)}" data-is-sqlite="${entry.is_sqlite ? '1' : '0'}">
+                <div class="explorer-order">${escapeHtml(orderText)}</div>
                 <div class="explorer-name-col">
                     <span class="explorer-name" title="${escapeHtml(entry.name || '')}">${highlightExplorerName(entry.name, state.explorerFilter)}</span>
                 </div>
@@ -166,7 +173,7 @@ async function loadTree(path = '', offset = 0, append = false) {
         state.explorerTotalEntries = data.total_entries || 0;
         state.explorerHasMore = data.has_more || false;
         
-        renderExplorer(data, append);
+        renderExplorer(data, append, offset);
 
         // 첫 로드 완료 후 나머지를 백그라운드로 자동 로딩
         if (!append && data.has_more) {
@@ -245,7 +252,7 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation, pro
                 state.explorerTotalEntries = data.total_entries || total;
                 state.explorerHasMore = data.has_more || false;
                 if (newEntries.length > 0) {
-                    renderExplorer({ entries: newEntries }, true);
+                    renderExplorer({ entries: newEntries }, true, offset);
                 }
             }
 
