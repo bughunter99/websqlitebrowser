@@ -9,6 +9,30 @@ let _explorerBgGeneration = 0;
 const EXPLORER_INITIAL_LIMIT = 120;
 const EXPLORER_CHUNK_LIMIT = 700;
 
+function _countExplorerEntryTypes(entries) {
+    let directories = 0;
+    let files = 0;
+    for (const entry of (Array.isArray(entries) ? entries : [])) {
+        if (entry?.type === 'directory') {
+            directories += 1;
+        } else if (entry?.type === 'file') {
+            files += 1;
+        }
+    }
+    return { directories, files };
+}
+
+function _explorerProgressText(progress) {
+    const totalEntries = Number(progress.totalEntries || 0);
+    const loadedEntries = Math.min(Number(progress.loadedEntries || 0), totalEntries || Number(progress.loadedEntries || 0));
+    const totalDirectories = Number(progress.totalDirectories || 0);
+    const totalFiles = Number(progress.totalFiles || 0);
+    const loadedDirectories = Math.min(Number(progress.loadedDirectories || 0), totalDirectories || Number(progress.loadedDirectories || 0));
+    const loadedFiles = Math.min(Number(progress.loadedFiles || 0), totalFiles || Number(progress.loadedFiles || 0));
+    const percent = totalEntries > 0 ? Math.min(100, (loadedEntries / totalEntries) * 100) : 100;
+    return `${loadedEntries.toLocaleString()} / ${totalEntries.toLocaleString()} entries (${percent.toFixed(1)}%) | folders ${loadedDirectories.toLocaleString()} / ${totalDirectories.toLocaleString()} | files ${loadedFiles.toLocaleString()} / ${totalFiles.toLocaleString()}`;
+}
+
 /**
  * 파일 탐색기 렌더링
  */
@@ -142,8 +166,17 @@ async function loadTree(path = '', offset = 0, append = false) {
             const bgPath = /** @type {string} */ (data.current_path);
             const bgOffset = state.explorerPaginationOffset;
             const bgTotal = data.total_entries || 0;
-            outputLog(`Explorer loading started: ${Math.min(bgOffset, bgTotal).toLocaleString()} / ${bgTotal.toLocaleString()}`);
-            _explorerBackgroundLoad(bgPath, bgOffset, bgTotal, bgGen);
+            const initialTypeCount = _countExplorerEntryTypes(data.entries);
+            const progress = {
+                loadedEntries: Math.min(bgOffset, bgTotal),
+                totalEntries: bgTotal,
+                loadedDirectories: initialTypeCount.directories,
+                loadedFiles: initialTypeCount.files,
+                totalDirectories: Number(stats.directories || 0),
+                totalFiles: Number(stats.files || 0),
+            };
+            outputLog(`Explorer background loading started: ${_explorerProgressText(progress)}`);
+            _explorerBackgroundLoad(bgPath, bgOffset, bgTotal, bgGen, progress);
         }
     } catch (error) {
         // @ts-ignore - error handling
@@ -170,8 +203,9 @@ async function loadTree(path = '', offset = 0, append = false) {
  * @param {number} startOffset
  * @param {number} total
  * @param {number} generation
+ * @param {{loadedEntries:number,totalEntries:number,loadedDirectories:number,loadedFiles:number,totalDirectories:number,totalFiles:number}} progress
  */
-async function _explorerBackgroundLoad(path, startOffset, total, generation) {
+async function _explorerBackgroundLoad(path, startOffset, total, generation, progress) {
     const CHUNK = EXPLORER_CHUNK_LIMIT;
     let offset = startOffset;
     let lastProgressLogAt = 0;
@@ -193,6 +227,9 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation) {
             const nextOffset = Number(data.next_offset);
             const resolvedNextOffset = Number.isFinite(nextOffset) ? nextOffset : (offset + newEntries.length);
             if (resolvedNextOffset <= offset) break;
+            const newTypeCount = _countExplorerEntryTypes(newEntries);
+            progress.loadedDirectories += newTypeCount.directories;
+            progress.loadedFiles += newTypeCount.files;
 
             if (state.lastTreeData && state.currentPath === path) {
                 state.lastTreeData.entries.push(...newEntries);
@@ -206,10 +243,10 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation) {
 
             offset = resolvedNextOffset;
             const loaded = offset;
+            progress.loadedEntries = loaded;
+            progress.totalEntries = data.total_entries || total;
             if (loaded - lastProgressLogAt >= CHUNK || !data.has_more) {
-                const totalEntries = data.total_entries || total;
-                const percent = totalEntries > 0 ? Math.min(100, (loaded / totalEntries) * 100) : 100;
-                outputLog(`Explorer loading ${loaded.toLocaleString()} / ${totalEntries.toLocaleString()} files (${percent.toFixed(1)}%)`);
+                outputLog(`Explorer loading ${_explorerProgressText(progress)}`);
                 lastProgressLogAt = loaded;
             }
 
@@ -223,7 +260,8 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation) {
     }
 
     if (_explorerBgGeneration === generation) {
-        outputLog(`Explorer all ${(state.explorerTotalEntries || total).toLocaleString()} files loaded`);
+        progress.loadedEntries = state.explorerTotalEntries || total;
+        outputLog(`Explorer all loaded: ${_explorerProgressText(progress)}`);
     }
 }
 
