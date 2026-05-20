@@ -4,6 +4,9 @@
  * 파일 탐색 관련 기능
  */
 
+/** 백그라운드 로딩 취소 제어용 카운터. loadTree 호출마다 증가해 이전 bg 루프를 무효화한다. */
+let _explorerBgGeneration = 0;
+
 /**
  * 파일 탐색기 렌더링
  */
@@ -50,7 +53,7 @@ function renderExplorer(treeData, append = false) {
     }).join('');
 
     if (append) {
-        domElements.explorerList.innerHTML += rows;
+        domElements.explorerList.insertAdjacentHTML('beforeend', rows);
     } else {
         domElements.explorerList.innerHTML = head + rows;
     }
@@ -70,21 +73,29 @@ function setExplorerFilter(value) {
  * 파일 트리 로드
  */
 async function loadTree(path = '', offset = 0, append = false) {
+    // 새 디렉터리 탐색 시 이전 백그라운드 로딩 취소
+    if (!append) {
+        _explorerBgGeneration++;
+    }
+
     try {
-        const url = `/api/tree/?path=${encodeURIComponent(path)}&offset=${offset}&limit=500`;
+        // 첫 로드는 200개로 빠르게, 이후 청크는 500개씩
+        const limit = (offset === 0 && !append) ? 200 : 500;
+        const url = `/api/tree/?path=${encodeURIComponent(path)}&offset=${offset}&limit=${limit}`;
         const data = /** @type {any} */ (await requestJson(url));
         
         // 새로운 경로이거나 처음 로드인 경우 초기화
         if (offset === 0 || !append) {
             state.currentPath = data.current_path;
             state.lastTreeData = { ...data };
-            state.explorerPaginationOffset = 0;
+            // 다음 청크 시작 오프셋 (= 실제로 반환된 항목 수)
+            state.explorerPaginationOffset = Array.isArray(data.entries) ? data.entries.length : 0;
         } else {
             // 기존 entries에 새 entries 추가
             if (state.lastTreeData) {
-                state.lastTreeData.entries.push(...data.entries);
+                state.lastTreeData.entries.push(...(Array.isArray(data.entries) ? data.entries : []));
             }
-            state.explorerPaginationOffset = offset + data.limit;
+            state.explorerPaginationOffset = offset + (Array.isArray(data.entries) ? data.entries.length : 0);
         }
         
         const displayPath = data.current_abs_path || `repository${data.current_path ? `/${data.current_path}` : ''}`;
@@ -116,6 +127,15 @@ async function loadTree(path = '', offset = 0, append = false) {
         state.explorerHasMore = data.has_more || false;
         
         renderExplorer(data, append);
+
+        // 첫 로드 완료 후 나머지를 백그라운드로 자동 로딩
+        if (!append && data.has_more) {
+            const bgGen = _explorerBgGeneration;
+            const bgPath = /** @type {string} */ (data.current_path);
+            const bgOffset = state.explorerPaginationOffset;
+            const bgTotal = data.total_entries || 0;
+            _explorerBackgroundLoad(bgPath, bgOffset, bgTotal, bgGen);
+        }
     } catch (error) {
         // @ts-ignore - error handling
         const errorMsg = error?.message || String(error);
@@ -134,6 +154,60 @@ async function loadTree(path = '', offset = 0, append = false) {
     }
 }
 
+/**
+ * 백그라운드로 나머지 entries를 청크 단위로 불러온다.
+ * generation 값이 바뀌면 즉시 중단한다 (디렉터리 이동 등).
+ * @param {string} path
+ * @param {number} startOffset
+ * @param {number} total
+ * @param {number} generation
+ */
+async function _explorerBackgroundLoad(path, startOffset, total, generation) {
+    const CHUNK = 500;
+    let offset = startOffset;
+
+    while (offset < total) {
+        if (_explorerBgGeneration !== generation) return;
+
+        // UI 블로킹 방지를 위한 짧은 대기
+        await new Promise((r) => setTimeout(r, 60));
+        if (_explorerBgGeneration !== generation) return;
+
+        try {
+            const url = `/api/tree/?path=${encodeURIComponent(path)}&offset=${offset}&limit=${CHUNK}`;
+            const data = /** @type {any} */ (await requestJson(url));
+
+            if (_explorerBgGeneration !== generation) return;
+
+            const newEntries = Array.isArray(data.entries) ? data.entries : [];
+            if (newEntries.length === 0) break;
+
+            if (state.lastTreeData && state.currentPath === path) {
+                state.lastTreeData.entries.push(...newEntries);
+                state.explorerPaginationOffset = offset + newEntries.length;
+                state.explorerTotalEntries = data.total_entries || total;
+                state.explorerHasMore = data.has_more || false;
+                renderExplorer({ entries: newEntries }, true);
+            }
+
+            offset += newEntries.length;
+            const loaded = offset;
+            outputLog(`Explorer loading ${loaded.toLocaleString()} / ${(data.total_entries || total).toLocaleString()} files`);
+
+            if (!data.has_more) break;
+        } catch (err) {
+            if (_explorerBgGeneration !== generation) return;
+            // @ts-ignore
+            outputLog(`Explorer background load error at offset ${offset}: ${err?.message || err}`, 'error');
+            break;
+        }
+    }
+
+    if (_explorerBgGeneration === generation) {
+        outputLog(`Explorer all ${(state.explorerTotalEntries || total).toLocaleString()} files loaded`);
+    }
+}
+
 function wireExplorerPanel() {
     document.querySelectorAll('.nav-button').forEach((button) => {
         const navButton = /** @type {HTMLElement} */ (button);
@@ -145,28 +219,29 @@ function wireExplorerPanel() {
         explorerFilter.addEventListener('input', (event) => {
             const input = /** @type {HTMLInputElement} */ (event.target);
             setExplorerFilter(input.value || '');
-            // Infinite scroll listener
-            let scrollLoadPending = false;
-            domElements.explorerList.addEventListener('scroll', (event) => {
-                if (scrollLoadPending || !state.explorerHasMore) {
-                    return;
-                }
-        
-                const elem = /** @type {HTMLElement} */ (event.target);
-                const threshold = 200;
-                const isNearBottom = elem.scrollHeight - elem.scrollTop - elem.clientHeight < threshold;
-        
-                if (isNearBottom) {
-                    scrollLoadPending = true;
-                    const nextOffset = state.explorerPaginationOffset || 0;
-                    loadTree(state.currentPath, nextOffset, true).finally(() => {
-                        scrollLoadPending = false;
-                    });
-                }
-            });
-
         });
     }
+
+    // 무한 스크롤: 백그라운드 로딩 미완료 시 수동 보완용
+    let scrollLoadPending = false;
+    domElements.explorerList.addEventListener('scroll', (event) => {
+        // 백그라운드 로딩 중이면 스킵
+        if (scrollLoadPending || !state.explorerHasMore) {
+            return;
+        }
+
+        const elem = /** @type {HTMLElement} */ (event.target);
+        const threshold = 300;
+        const isNearBottom = elem.scrollHeight - elem.scrollTop - elem.clientHeight < threshold;
+
+        if (isNearBottom) {
+            scrollLoadPending = true;
+            const nextOffset = state.explorerPaginationOffset || 0;
+            loadTree(state.currentPath, nextOffset, true).finally(() => {
+                scrollLoadPending = false;
+            });
+        }
+    });
 
     domElements.explorerList.addEventListener('click', (event) => {
         const target = /** @type {Element | null} */ (event.target instanceof Element ? event.target : null);
