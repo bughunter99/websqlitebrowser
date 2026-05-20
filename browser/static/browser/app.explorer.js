@@ -23,12 +23,17 @@ function _countExplorerEntryTypes(entries) {
 }
 
 function _explorerProgressText(progress) {
+    const clampLoaded = (loaded, total) => {
+        const safeLoaded = Number(loaded || 0);
+        const safeTotal = Number(total || 0);
+        return safeTotal > 0 ? Math.min(safeLoaded, safeTotal) : safeLoaded;
+    };
     const totalEntries = Number(progress.totalEntries || 0);
-    const loadedEntries = Math.min(Number(progress.loadedEntries || 0), totalEntries || Number(progress.loadedEntries || 0));
+    const loadedEntries = clampLoaded(progress.loadedEntries, totalEntries);
     const totalDirectories = Number(progress.totalDirectories || 0);
     const totalFiles = Number(progress.totalFiles || 0);
-    const loadedDirectories = Math.min(Number(progress.loadedDirectories || 0), totalDirectories || Number(progress.loadedDirectories || 0));
-    const loadedFiles = Math.min(Number(progress.loadedFiles || 0), totalFiles || Number(progress.loadedFiles || 0));
+    const loadedDirectories = clampLoaded(progress.loadedDirectories, totalDirectories);
+    const loadedFiles = clampLoaded(progress.loadedFiles, totalFiles);
     const percent = totalEntries > 0 ? Math.min(100, (loadedEntries / totalEntries) * 100) : 100;
     return `${loadedEntries.toLocaleString()} / ${totalEntries.toLocaleString()} entries (${percent.toFixed(1)}%) | folders ${loadedDirectories.toLocaleString()} / ${totalDirectories.toLocaleString()} | files ${loadedFiles.toLocaleString()} / ${totalFiles.toLocaleString()}`;
 }
