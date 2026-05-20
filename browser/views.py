@@ -88,6 +88,7 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 		# Serialize visible entries only
 		total_count = len(all_entries)
 		visible_entries = all_entries[offset:offset + limit]
+		next_offset = min(offset + len(visible_entries), total_count)
 
 		from pathlib import Path as _Path
 		entries = []
@@ -125,8 +126,9 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 				'stats': directory_stats(current_path),
 				'total_entries': total_count,
 				'offset': offset,
+				'next_offset': next_offset,
 				'limit': limit,
-				'has_more': (offset + limit) < total_count,
+				'has_more': next_offset < total_count,
 			}
 		)
 	except PermissionError as error:

@@ -6,15 +6,50 @@
 
 /** 백그라운드 로딩 취소 제어용 카운터. loadTree 호출마다 증가해 이전 bg 루프를 무효화한다. */
 let _explorerBgGeneration = 0;
+const EXPLORER_INITIAL_LIMIT = 120;
+const EXPLORER_CHUNK_LIMIT = 700;
+
+function _countExplorerEntryTypes(entries) {
+    let directories = 0;
+    let files = 0;
+    for (const entry of (Array.isArray(entries) ? entries : [])) {
+        if (entry?.type === 'directory') {
+            directories += 1;
+        } else if (entry?.type === 'file') {
+            files += 1;
+        }
+    }
+    return { directories, files };
+}
+
+function _explorerProgressText(progress) {
+    const clampLoaded = (loaded, total) => {
+        const safeLoaded = Number(loaded || 0);
+        const safeTotal = Number(total || 0);
+        return safeTotal > 0 ? Math.min(safeLoaded, safeTotal) : safeLoaded;
+    };
+    const totalEntries = Number(progress.totalEntries || 0);
+    const loadedEntries = clampLoaded(progress.loadedEntries, totalEntries);
+    const totalDirectories = Number(progress.totalDirectories || 0);
+    const totalFiles = Number(progress.totalFiles || 0);
+    const loadedDirectories = clampLoaded(progress.loadedDirectories, totalDirectories);
+    const loadedFiles = clampLoaded(progress.loadedFiles, totalFiles);
+    const percent = totalEntries > 0 ? Math.min(100, (loadedEntries / totalEntries) * 100) : 100;
+    const entriesText = `${loadedEntries.toLocaleString()} / ${totalEntries.toLocaleString()} entries (${percent.toFixed(1)}%)`;
+    const foldersText = `folders ${loadedDirectories.toLocaleString()} / ${totalDirectories.toLocaleString()}`;
+    const filesText = `files ${loadedFiles.toLocaleString()} / ${totalFiles.toLocaleString()}`;
+    return `${entriesText} | ${foldersText} | ${filesText}`;
+}
 
 /**
  * 파일 탐색기 렌더링
  */
-function renderExplorer(treeData, append = false) {
+function renderExplorer(treeData, append = false, startOffset = 0) {
     const entries = Array.isArray(treeData.entries) ? treeData.entries : [];
     const filterQuery = String(state.explorerFilter || '').trim().toLowerCase();
     const head = `
         <div class="explorer-head">
+            <div class="explorer-order-head">No.</div>
             <div>Name</div>
             <div style="text-align: right;">Size</div>
             <div style="text-align: right;">Modified</div>
@@ -32,17 +67,25 @@ function renderExplorer(treeData, append = false) {
             modified_at: '',
         });
     }
+    const numberedEntries = entries.map((entry, index) => ({
+        ...entry,
+        _orderNo: Number(startOffset) + index + 1,
+    }));
     const filteredEntries = filterQuery
-        ? entries.filter((entry) => String(entry.name || '').toLowerCase().includes(filterQuery))
-        : entries;
+        ? numberedEntries.filter((entry) => String(entry.name || '').toLowerCase().includes(filterQuery))
+        : numberedEntries;
     allEntries.push(...filteredEntries);
 
     const rows = allEntries.map((entry) => {
         const sizeText = entry.type === 'file' ? (entry.size_human || '0 B') : '';
+        const orderText = entry.type === 'parent' || !Number.isFinite(Number(entry._orderNo))
+            ? ''
+            : Number(entry._orderNo).toLocaleString();
         const selectedClass = state.selectedExplorerPath && state.selectedExplorerPath === entry.path ? ' selected' : '';
         const parentClass = entry.type === 'parent' ? ' parent-row' : '';
         return `
             <div class="explorer-row${selectedClass}${parentClass}" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.type)}" data-is-sqlite="${entry.is_sqlite ? '1' : '0'}">
+                <div class="explorer-order">${escapeHtml(orderText)}</div>
                 <div class="explorer-name-col">
                     <span class="explorer-name" title="${escapeHtml(entry.name || '')}">${highlightExplorerName(entry.name, state.explorerFilter)}</span>
                 </div>
@@ -79,8 +122,8 @@ async function loadTree(path = '', offset = 0, append = false) {
     }
 
     try {
-        // 첫 로드는 200개로 빠르게, 이후 청크는 500개씩
-        const limit = (offset === 0 && !append) ? 200 : 500;
+        // 첫 화면은 빠르게, 이후는 큰 청크로 백그라운드 로딩
+        const limit = (offset === 0 && !append) ? EXPLORER_INITIAL_LIMIT : EXPLORER_CHUNK_LIMIT;
         const url = `/api/tree/?path=${encodeURIComponent(path)}&offset=${offset}&limit=${limit}`;
         const data = /** @type {any} */ (await requestJson(url));
         
@@ -88,14 +131,20 @@ async function loadTree(path = '', offset = 0, append = false) {
         if (offset === 0 || !append) {
             state.currentPath = data.current_path;
             state.lastTreeData = { ...data };
-            // 다음 청크 시작 오프셋 (= 실제로 반환된 항목 수)
-            state.explorerPaginationOffset = Array.isArray(data.entries) ? data.entries.length : 0;
+            // 다음 청크 시작 오프셋 (서버 기준 next_offset 우선 사용)
+            const nextOffset = Number(data.next_offset);
+            state.explorerPaginationOffset = Number.isFinite(nextOffset)
+                ? nextOffset
+                : (Array.isArray(data.entries) ? data.entries.length : 0);
         } else {
             // 기존 entries에 새 entries 추가
             if (state.lastTreeData) {
                 state.lastTreeData.entries.push(...(Array.isArray(data.entries) ? data.entries : []));
             }
-            state.explorerPaginationOffset = offset + (Array.isArray(data.entries) ? data.entries.length : 0);
+            const nextOffset = Number(data.next_offset);
+            state.explorerPaginationOffset = Number.isFinite(nextOffset)
+                ? nextOffset
+                : (offset + (Array.isArray(data.entries) ? data.entries.length : 0));
         }
         
         const displayPath = data.current_abs_path || `repository${data.current_path ? `/${data.current_path}` : ''}`;
@@ -126,7 +175,7 @@ async function loadTree(path = '', offset = 0, append = false) {
         state.explorerTotalEntries = data.total_entries || 0;
         state.explorerHasMore = data.has_more || false;
         
-        renderExplorer(data, append);
+        renderExplorer(data, append, offset);
 
         // 첫 로드 완료 후 나머지를 백그라운드로 자동 로딩
         if (!append && data.has_more) {
@@ -134,7 +183,17 @@ async function loadTree(path = '', offset = 0, append = false) {
             const bgPath = /** @type {string} */ (data.current_path);
             const bgOffset = state.explorerPaginationOffset;
             const bgTotal = data.total_entries || 0;
-            _explorerBackgroundLoad(bgPath, bgOffset, bgTotal, bgGen);
+            const initialTypeCount = _countExplorerEntryTypes(data.entries);
+            const progress = {
+                loadedEntries: Math.min(bgOffset, bgTotal),
+                totalEntries: bgTotal,
+                loadedDirectories: initialTypeCount.directories,
+                loadedFiles: initialTypeCount.files,
+                totalDirectories: Number(stats.directories || 0),
+                totalFiles: Number(stats.files || 0),
+            };
+            outputLog(`Explorer background loading started: ${_explorerProgressText(progress)}`);
+            _explorerBackgroundLoad(bgPath, bgOffset, bgTotal, bgGen, progress);
         }
     } catch (error) {
         // @ts-ignore - error handling
@@ -161,10 +220,12 @@ async function loadTree(path = '', offset = 0, append = false) {
  * @param {number} startOffset
  * @param {number} total
  * @param {number} generation
+ * @param {{loadedEntries:number,totalEntries:number,loadedDirectories:number,loadedFiles:number,totalDirectories:number,totalFiles:number}} progress
  */
-async function _explorerBackgroundLoad(path, startOffset, total, generation) {
-    const CHUNK = 500;
+async function _explorerBackgroundLoad(path, startOffset, total, generation, progress) {
+    const CHUNK = EXPLORER_CHUNK_LIMIT;
     let offset = startOffset;
+    let lastProgressLogAt = 0;
 
     while (offset < total) {
         if (_explorerBgGeneration !== generation) return;
@@ -181,18 +242,33 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation) {
 
             const newEntries = Array.isArray(data.entries) ? data.entries : [];
             if (newEntries.length === 0) break;
+            const nextOffset = Number(data.next_offset);
+            let resolvedNextOffset = Number.isFinite(nextOffset) ? nextOffset : (offset + newEntries.length);
+            if (resolvedNextOffset <= offset) {
+                resolvedNextOffset = offset + newEntries.length;
+            }
+            const newTypeCount = _countExplorerEntryTypes(newEntries);
+            progress.loadedDirectories += newTypeCount.directories;
+            progress.loadedFiles += newTypeCount.files;
 
             if (state.lastTreeData && state.currentPath === path) {
                 state.lastTreeData.entries.push(...newEntries);
-                state.explorerPaginationOffset = offset + newEntries.length;
+                state.explorerPaginationOffset = resolvedNextOffset;
                 state.explorerTotalEntries = data.total_entries || total;
                 state.explorerHasMore = data.has_more || false;
-                renderExplorer({ entries: newEntries }, true);
+                if (newEntries.length > 0) {
+                    renderExplorer({ entries: newEntries }, true, offset);
+                }
             }
 
-            offset += newEntries.length;
+            offset = resolvedNextOffset;
             const loaded = offset;
-            outputLog(`Explorer loading ${loaded.toLocaleString()} / ${(data.total_entries || total).toLocaleString()} files`);
+            progress.loadedEntries = loaded;
+            progress.totalEntries = data.total_entries || total;
+            if (loaded - lastProgressLogAt >= CHUNK || !data.has_more) {
+                outputLog(`Explorer loading ${_explorerProgressText(progress)}`);
+                lastProgressLogAt = loaded;
+            }
 
             if (!data.has_more) break;
         } catch (err) {
@@ -204,7 +280,8 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation) {
     }
 
     if (_explorerBgGeneration === generation) {
-        outputLog(`Explorer all ${(state.explorerTotalEntries || total).toLocaleString()} files loaded`);
+        progress.loadedEntries = state.explorerTotalEntries || total;
+        outputLog(`Explorer all loaded: ${_explorerProgressText(progress)}`);
     }
 }
 

@@ -591,18 +591,24 @@
         }
 
         .explorer-head > div:nth-child(1),
+        .explorer-row > .explorer-order {
+            width: 56px;
+            flex-shrink: 0;
+        }
+
+        .explorer-head > div:nth-child(2),
         .explorer-row > .explorer-name-col {
             flex: 1 1 auto;
             min-width: 0;
         }
 
-        .explorer-head > div:nth-child(2),
+        .explorer-head > div:nth-child(3),
         .explorer-row > .explorer-size {
             width: 90px;
             flex-shrink: 0;
         }
 
-        .explorer-head > div:nth-child(3),
+        .explorer-head > div:nth-child(4),
         .explorer-row > .explorer-modified {
             width: 130px;
             flex-shrink: 0;
@@ -619,6 +625,10 @@
             font-size: calc(0.58rem * var(--explorer-scale));
             min-height: calc(14px * var(--explorer-scale));
             line-height: 1;
+        }
+
+        .explorer-order-head {
+            text-align: right;
         }
 
         .explorer-row {
@@ -658,6 +668,7 @@
             min-width: 0;
         }
 
+        .explorer-order,
         .explorer-size,
         .explorer-modified {
             font-size: calc(0.58rem * var(--explorer-scale));
@@ -666,6 +677,7 @@
             white-space: nowrap;
         }
 
+        .explorer-row.parent-row .explorer-order,
         .explorer-row.parent-row .explorer-size,
         .explorer-row.parent-row .explorer-modified {
             color: #7b8ba1;
@@ -1786,6 +1798,7 @@
             font-size: 0.9rem;
         }
 
+        html[data-device="desktop"][data-os="windows"] .explorer-order,
         html[data-device="desktop"][data-os="windows"] .explorer-size,
         html[data-device="desktop"][data-os="windows"] .explorer-modified {
             font-size: 0.87rem;
