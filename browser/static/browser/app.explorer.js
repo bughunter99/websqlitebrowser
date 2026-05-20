@@ -49,7 +49,7 @@ function renderExplorer(treeData, append = false, startOffset = 0) {
     const filterQuery = String(state.explorerFilter || '').trim().toLowerCase();
     const head = `
         <div class="explorer-head">
-            <div style="text-align: right;">No.</div>
+            <div class="explorer-order-head">No.</div>
             <div>Name</div>
             <div style="text-align: right;">Size</div>
             <div style="text-align: right;">Modified</div>
@@ -240,7 +240,11 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation, pro
 
             const newEntries = Array.isArray(data.entries) ? data.entries : [];
             const nextOffset = Number(data.next_offset);
-            const resolvedNextOffset = Number.isFinite(nextOffset) ? nextOffset : (offset + newEntries.length);
+            let resolvedNextOffset = Number.isFinite(nextOffset) ? nextOffset : (offset + newEntries.length);
+            if (resolvedNextOffset <= offset) {
+                if (newEntries.length === 0) break;
+                resolvedNextOffset = offset + newEntries.length;
+            }
             if (resolvedNextOffset <= offset) break;
             const newTypeCount = _countExplorerEntryTypes(newEntries);
             progress.loadedDirectories += newTypeCount.directories;

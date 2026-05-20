@@ -627,6 +627,10 @@
             line-height: 1;
         }
 
+        .explorer-order-head {
+            text-align: right;
+        }
+
         .explorer-row {
             border-bottom: 1px solid #d6deea;
             cursor: default;
