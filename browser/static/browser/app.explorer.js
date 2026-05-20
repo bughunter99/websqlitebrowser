@@ -245,7 +245,6 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation, pro
                 if (newEntries.length === 0) break;
                 resolvedNextOffset = offset + newEntries.length;
             }
-            if (resolvedNextOffset <= offset) break;
             const newTypeCount = _countExplorerEntryTypes(newEntries);
             progress.loadedDirectories += newTypeCount.directories;
             progress.loadedFiles += newTypeCount.files;
@@ -264,7 +263,7 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation, pro
             const loaded = offset;
             progress.loadedEntries = loaded;
             progress.totalEntries = data.total_entries || total;
-            if (loaded !== lastProgressLogAt || !data.has_more) {
+            if (loaded - lastProgressLogAt >= CHUNK || !data.has_more) {
                 outputLog(`Explorer loading ${_explorerProgressText(progress)}`);
                 lastProgressLogAt = loaded;
             }
