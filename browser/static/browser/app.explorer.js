@@ -78,7 +78,9 @@ function renderExplorer(treeData, append = false, startOffset = 0) {
 
     const rows = allEntries.map((entry) => {
         const sizeText = entry.type === 'file' ? (entry.size_human || '0 B') : '';
-        const orderText = entry.type === 'parent' ? '' : Number(entry._orderNo || 0).toLocaleString();
+        const orderText = entry.type === 'parent' || !Number.isFinite(Number(entry._orderNo))
+            ? ''
+            : Number(entry._orderNo).toLocaleString();
         const selectedClass = state.selectedExplorerPath && state.selectedExplorerPath === entry.path ? ' selected' : '';
         const parentClass = entry.type === 'parent' ? ' parent-row' : '';
         return `
@@ -239,10 +241,10 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation, pro
             if (_explorerBgGeneration !== generation) return;
 
             const newEntries = Array.isArray(data.entries) ? data.entries : [];
+            if (newEntries.length === 0) break;
             const nextOffset = Number(data.next_offset);
             let resolvedNextOffset = Number.isFinite(nextOffset) ? nextOffset : (offset + newEntries.length);
             if (resolvedNextOffset <= offset) {
-                if (newEntries.length === 0) break;
                 resolvedNextOffset = offset + newEntries.length;
             }
             const newTypeCount = _countExplorerEntryTypes(newEntries);
