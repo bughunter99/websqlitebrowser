@@ -161,18 +161,6 @@ function renderVirtualizedTable(target, columns, rows, sortState = null) {
         return;
     }
 
-    const syncBodyHeight = () => {
-        const wrapRect = wrap?.getBoundingClientRect();
-        const headRect = head?.getBoundingClientRect();
-        if (!wrapRect) {
-            return;
-        }
-
-        const nextHeight = Math.max(120, Math.floor(wrapRect.height - (headRect?.height || 20)));
-        body.style.height = `${nextHeight}px`;
-        body.style.maxHeight = `${nextHeight}px`;
-    };
-
     if (wrap) {
         wrap.dataset.maxRow = String(Math.max(0, sortedRows.length - 1));
         wrap.dataset.maxCol = String(Math.max(0, columns.length - 1));
@@ -263,10 +251,8 @@ function renderVirtualizedTable(target, columns, rows, sortState = null) {
         syncHeaderScroll();
     });
 
-    syncBodyHeight();
     if (typeof ResizeObserver !== 'undefined' && wrap) {
         const resizeObserver = new ResizeObserver(() => {
-            syncBodyHeight();
             renderWindow(true);
         });
         resizeObserver.observe(wrap);

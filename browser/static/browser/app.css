@@ -997,8 +997,6 @@
         .table-grid-container .virtual-grid-body {
             min-height: 0;
             min-width: 0;
-            flex: 1;
-            height: 100%;
         }
 
         .query-multi-results {
@@ -1332,7 +1330,9 @@
         .virtual-grid-wrap {
             display: grid;
             grid-template-rows: auto minmax(0, 1fr);
+            grid-template-columns: minmax(0, 1fr);
             min-height: 0;
+            min-width: 0;
             height: 100%;
             border: 1px solid var(--line-strong);
             border-radius: 4px;
@@ -1401,12 +1401,9 @@
             position: relative;
             min-height: 0;
             min-width: 0;
-            flex: 1;
-            height: 100%;
             overflow-x: auto;
             overflow-y: auto;
             background: #ffffff;
-            scrollbar-gutter: stable both-edges;
         }
 
         .table-wrap::-webkit-scrollbar,
