@@ -483,11 +483,27 @@ def fetch_tables(database_path: Path) -> list[dict[str, object]]:
         return tables
 
 
+_JS_MAX_SAFE_INT = 9007199254740991  # 2^53 - 1
+
+
+def _safe_value(v: object) -> object:
+    """Convert integers that exceed JavaScript's Number.MAX_SAFE_INTEGER to strings
+    to prevent silent precision loss during JSON.parse() on the frontend."""
+    if isinstance(v, int) and not isinstance(v, bool):
+        if v > _JS_MAX_SAFE_INT or v < -_JS_MAX_SAFE_INT:
+            return str(v)
+    return v
+
+
+def _safe_row(row: dict) -> dict:
+    return {k: _safe_value(v) for k, v in row.items()}
+
+
 def serialize_rows(cursor: sqlite3.Cursor, limit: int | None = 100) -> dict[str, object]:
     columns = [description[0] for description in cursor.description or []]
 
     if limit is None:
-        rows = [dict(row) for row in cursor.fetchall()]
+        rows = [_safe_row(dict(row)) for row in cursor.fetchall()]
         return {
             'columns': columns,
             'rows': rows,
@@ -498,7 +514,7 @@ def serialize_rows(cursor: sqlite3.Cursor, limit: int | None = 100) -> dict[str,
 
     fetched_rows = cursor.fetchmany(limit + 1)
     truncated = len(fetched_rows) > limit
-    rows = [dict(row) for row in fetched_rows[:limit]]
+    rows = [_safe_row(dict(row)) for row in fetched_rows[:limit]]
     return {
         'columns': columns,
         'rows': rows,
@@ -512,7 +528,7 @@ def table_preview(database_path: Path, table_name: str, limit: int = DEFAULT_SAM
     with connect_database(database_path) as connection:
         escaped_table_name = quote_identifier(table_name)
         cursor = connection.execute(f'SELECT * FROM "{escaped_table_name}" LIMIT {limit}')
-        return [dict(row) for row in cursor.fetchall()]
+        return [_safe_row(dict(row)) for row in cursor.fetchall()]
 
 
 def metadata_root() -> Path:
