@@ -649,6 +649,10 @@ from invoices;
 data explorer에서 sqlite를 선택하고 데이터를 보면 스크롤바가 없는데 확인해줘.
 
 
+여기 네가 만들어준 invoices.db를 봐도 스크롤바가 아예 안 보여. 컬럼은 100개 넘고, row도 많은데
+
+
+
 /////////
 
 
