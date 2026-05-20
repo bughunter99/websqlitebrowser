@@ -1016,35 +1016,21 @@ def validate_read_only_sql(sql: str) -> str:
     - 주석 제거 (잠재적 위험 회피)
     - 쿼리 복잡도 제한
     """
-    cleaned = sql.strip()
+    cleaned = strip_sql_comments(sql).strip()
     if not cleaned:
         raise SuspiciousOperation('SQL is required.')
 
-    # 1. 주석 제거 (-- 및 /* */ 스타일)
-    # 단, 문자열 리터럴 내 주석 문자는 보존
-    lines = []
-    for line in cleaned.split('\n'):
-        # -- 주석 제거 (SQL 문자열 내 --는 보존하기 위해 간단한 처리)
-        if '--' in line:
-            parts = line.split('--')
-            line = parts[0]
-        lines.append(line)
-    cleaned = '\n'.join(lines)
-    
-    # /* */ 주석 제거
     import re as regex_module
-    cleaned = regex_module.sub(r'/\*.*?\*/', '', cleaned, flags=regex_module.DOTALL)
-    cleaned = cleaned.strip()
 
     if not cleaned:
         raise SuspiciousOperation('SQL is required.')
 
-    # 2. 읽기 전용 여부 확인
+    # 1. 읽기 전용 여부 확인
     normalized = cleaned.lower()
     if not normalized.startswith(READ_ONLY_PREFIXES):
         raise SuspiciousOperation('Only read-only SQL statements are allowed.')
 
-    # 3. 위험한 패턴 차단
+    # 2. 위험한 패턴 차단
     dangerous_patterns = [
         r'(?i)\battach\b',  # ATTACH DATABASE
         r'(?i)\bdetach\b',  # DETACH DATABASE
@@ -1059,7 +1045,7 @@ def validate_read_only_sql(sql: str) -> str:
         if regex_module.search(pattern, cleaned):
             raise SuspiciousOperation(f'Dangerous SQL pattern detected.')
 
-    # 4. 복잡도 제한 (JOIN 최대 5개, 서브쿼리 최대 3개)
+    # 3. 복잡도 제한 (JOIN 최대 5개, 서브쿼리 최대 3개)
     join_count = len(regex_module.findall(r'(?i)\bjoin\b', cleaned))
     subquery_count = cleaned.count('(SELECT') + cleaned.count('(select')
     
@@ -1071,14 +1057,94 @@ def validate_read_only_sql(sql: str) -> str:
     return cleaned
 
 
+def strip_sql_comments(sql: str) -> str:
+    """Remove -- and /* */ comments while preserving quoted strings."""
+    if not sql:
+        return ''
+
+    out: list[str] = []
+    i = 0
+    n = len(sql)
+    in_single = False
+    in_double = False
+    in_line_comment = False
+    in_block_comment = False
+
+    while i < n:
+        ch = sql[i]
+        nxt = sql[i + 1] if i + 1 < n else ''
+
+        if in_line_comment:
+            if ch == '\n':
+                in_line_comment = False
+                out.append(ch)
+            i += 1
+            continue
+
+        if in_block_comment:
+            if ch == '*' and nxt == '/':
+                in_block_comment = False
+                i += 2
+            else:
+                i += 1
+            continue
+
+        if in_single:
+            out.append(ch)
+            if ch == "'":
+                if nxt == "'":
+                    out.append(nxt)
+                    i += 2
+                    continue
+                in_single = False
+            i += 1
+            continue
+
+        if in_double:
+            out.append(ch)
+            if ch == '"':
+                if nxt == '"':
+                    out.append(nxt)
+                    i += 2
+                    continue
+                in_double = False
+            i += 1
+            continue
+
+        if ch == '-' and nxt == '-':
+            in_line_comment = True
+            i += 2
+            continue
+        if ch == '/' and nxt == '*':
+            in_block_comment = True
+            i += 2
+            continue
+
+        if ch == "'":
+            in_single = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == '"':
+            in_double = True
+            out.append(ch)
+            i += 1
+            continue
+
+        out.append(ch)
+        i += 1
+
+    return ''.join(out)
+
+
 def split_sql_statements(sql: str) -> list[str]:
-    cleaned = sql.strip()
+    cleaned = strip_sql_comments(sql).strip()
     if not cleaned:
         raise SuspiciousOperation('SQL is required.')
 
     statements: list[str] = []
     buffer = ''
-    for line in sql.splitlines(keepends=True):
+    for line in cleaned.splitlines(keepends=True):
         buffer += line
         if sqlite3.complete_statement(buffer):
             statement = buffer.strip()

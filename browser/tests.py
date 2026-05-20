@@ -48,6 +48,18 @@ class BrowserApiTests(TestCase):
 		self.assertIn('disk', payload['stats'])
 		self.assertIn('used_percent', payload['stats']['disk'])
 
+    def test_repository_tree_current_folder_has_parent_even_when_parent_path_empty(self):
+        current_dir = self.repository_root / 'current'
+        current_dir.mkdir(exist_ok=True)
+
+        response = self.client.get('/api/tree/', {'path': 'current'})
+        self.assertEqual(response.status_code, 200)
+
+        payload = response.json()
+        self.assertEqual(payload['current_path'], 'current')
+        self.assertEqual(payload['parent_path'], '')
+        self.assertTrue(payload['has_parent'])
+
 	def test_open_database_returns_table_metadata(self):
 		response = self.client.get('/api/database/', {'path': 'sample.db'})
 		self.assertEqual(response.status_code, 200)
@@ -364,6 +376,23 @@ class SplitSqlStatementsTests(TestCase):
         stmts = services.split_sql_statements(sql)
         self.assertEqual(len(stmts), 1)
 
+    def test_oracle_style_comments_are_ignored(self):
+        sql = (
+            '-- pre comment\n'
+            'SELECT 1;\n'
+            '/* middle block comment; with semicolon */\n'
+            'SELECT 2;\n'
+            '-- tail comment\n'
+        )
+        stmts = services.split_sql_statements(sql)
+        self.assertEqual(stmts, ['SELECT 1', 'SELECT 2'])
+
+    def test_comment_tokens_inside_string_are_preserved(self):
+        sql = "SELECT '--not comment' AS a, '/*also not*/' AS b;"
+        stmts = services.split_sql_statements(sql)
+        self.assertEqual(len(stmts), 1)
+        self.assertEqual(stmts[0], "SELECT '--not comment' AS a, '/*also not*/' AS b")
+
 
 class ParseLlmContentTests(TestCase):
     """parse_llm_content() – LLM 응답 파싱"""
@@ -499,6 +528,12 @@ class SqlInjectionDefenseTests(TestCase):
         sql = 'SELECT * FROM users /* DROP TABLE users */'
         result = services.validate_read_only_sql(sql)
         self.assertNotIn('DROP', result)
+
+    def test_sql_comment_tokens_in_string_not_removed(self):
+        sql = "SELECT '--safe' AS a, '/*safe*/' AS b"
+        result = services.validate_read_only_sql(sql)
+        self.assertIn("'--safe'", result)
+        self.assertIn("'/*safe*/'", result)
 
     def test_join_limit_enforced(self):
         # 6개 이상의 JOIN은 거부 (복잡도 제한)

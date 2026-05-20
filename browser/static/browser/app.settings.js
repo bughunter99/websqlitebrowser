@@ -3,6 +3,51 @@
  * app.settings.js - Settings panel wiring
  */
 
+const OPENAI_COMPAT_EXAMPLE = {
+    endpoint: 'http://intranet-llm.local:8000/v1/chat/completions',
+    model: 'gpt-4.1-mini',
+    additionalHeaders: JSON.stringify({
+        'Send-System-Name': 'planground',
+        'User-Type': 'AD_ID',
+        'X-Tenant': 'internal',
+    }, null, 2),
+    additionalPayload: JSON.stringify({
+        top_p: 0.9,
+        max_tokens: 1024,
+        response_format: { type: 'json_object' },
+    }, null, 2),
+};
+
+function applyOpenAiCompatExamplesIfEmpty() {
+    const endpointEl = /** @type {HTMLInputElement | null} */ (document.getElementById('llm-endpoint'));
+    const modelEl = /** @type {HTMLInputElement | null} */ (document.getElementById('llm-model'));
+    const headersEl = /** @type {HTMLTextAreaElement | null} */ (document.getElementById('llm-additional-headers'));
+    const payloadEl = /** @type {HTMLTextAreaElement | null} */ (document.getElementById('llm-additional-payload'));
+    if (!endpointEl || !modelEl || !headersEl || !payloadEl) {
+        return false;
+    }
+
+    let changed = false;
+    if (!String(endpointEl.value || '').trim()) {
+        endpointEl.value = OPENAI_COMPAT_EXAMPLE.endpoint;
+        changed = true;
+    }
+    if (!String(modelEl.value || '').trim()) {
+        modelEl.value = OPENAI_COMPAT_EXAMPLE.model;
+        changed = true;
+    }
+    if (!String(headersEl.value || '').trim()) {
+        headersEl.value = OPENAI_COMPAT_EXAMPLE.additionalHeaders;
+        changed = true;
+    }
+    if (!String(payloadEl.value || '').trim()) {
+        payloadEl.value = OPENAI_COMPAT_EXAMPLE.additionalPayload;
+        changed = true;
+    }
+
+    return changed;
+}
+
 async function loadSettings() {
     try {
         const data = await requestJson('/api/settings/');
@@ -14,7 +59,10 @@ async function loadSettings() {
         document.getElementById('sqlite-folder-system').value = data.settings.system_folder || 'system';
         document.getElementById('sqlite-folder-current').value = data.settings.current_folder || 'current';
         document.getElementById('sqlite-folder-hist').value = data.settings.hist_folder || 'hist';
-        document.getElementById('settings-status').textContent = '서버 설정을 불러왔습니다.';
+        const filledWithExamples = applyOpenAiCompatExamplesIfEmpty();
+        document.getElementById('settings-status').textContent = filledWithExamples
+            ? '서버 설정을 불러왔습니다. 비어 있는 항목에는 OpenAI 호환 예시를 채웠습니다.'
+            : '서버 설정을 불러왔습니다.';
     } catch (error) {
         document.getElementById('settings-status').textContent = error.message;
     }

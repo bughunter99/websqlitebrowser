@@ -30,6 +30,16 @@ function asJsonObject(value) {
 }
 
 /**
+ * URL에 타임스탬프를 추가하여 캐시 방지
+ * @param {string} url
+ * @returns {string}
+ */
+function addTimestampToUrl(url) {
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}timestamp=${Date.now()}`;
+}
+
+/**
  * JSON 응답을 반환하는 HTTP 요청 (타임아웃, 재시도 지원)
  * @param {string} url
  * @param {RequestInit} [options]
@@ -37,6 +47,8 @@ function asJsonObject(value) {
  * @returns {Promise<JsonObject>}
  */
 async function requestJson(url, options = {}, retryCount = 0) {
+    url = addTimestampToUrl(url); // 타임스탬프 추가
+
     const controller = new AbortController();
     const externalSignal = options && options.signal instanceof AbortSignal ? options.signal : null;
     let onExternalAbort = null;

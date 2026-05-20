@@ -69,12 +69,14 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 			# 디렉토리 먼저, 같은 타입 내에서는 이름 순
 			all_entries = sorted(raw, key=lambda e: (e.is_file(), e.name.lower()))
 		except PermissionError as e:
+			has_parent = current_path != explorer_top_root()
 			# 권한 거부: 부분 결과와 에러 메시지 함께 반환
 			return JsonResponse(
 				{
 					'current_path': relative_to_root(current_path),
 					'current_abs_path': str(current_path),
 					'parent_path': '' if current_path == explorer_top_root() else relative_to_root(current_path.parent),
+					'has_parent': has_parent,
 					'entries': [],
 					'stats': directory_stats(current_path),
 					'total_entries': 0,
@@ -113,8 +115,9 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 				# Skip entries we can't stat
 				pass
 
+		has_parent = current_path != explorer_top_root()
 		parent = ''
-		if current_path != explorer_top_root():
+		if has_parent:
 			parent = relative_to_root(current_path.parent)
 
 		return JsonResponse(
@@ -122,6 +125,7 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 				'current_path': relative_to_root(current_path),
 				'current_abs_path': str(current_path),
 				'parent_path': parent,
+				'has_parent': has_parent,
 				'entries': entries,
 				'stats': directory_stats(current_path),
 				'total_entries': total_count,
@@ -201,6 +205,9 @@ def run_query(request: HttpRequest) -> JsonResponse:
 
 		if not is_sqlite_file(database_path):
 			raise SuspiciousOperation('Selected file is not a SQLite database.')
+
+		# SYSDATE 변환 로직 추가
+		sql = sql.replace('SYSDATE', "DATETIME('now')")
 
 		result = run_read_only_query(database_path, sql)
 

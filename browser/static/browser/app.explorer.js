@@ -46,6 +46,7 @@ function _explorerProgressText(progress) {
  */
 function renderExplorer(treeData, append = false, startOffset = 0) {
     const entries = Array.isArray(treeData.entries) ? treeData.entries : [];
+    const hasParent = Boolean(treeData.has_parent);
     const filterQuery = String(state.explorerFilter || '').trim().toLowerCase();
     const head = `
         <div class="explorer-head">
@@ -57,7 +58,7 @@ function renderExplorer(treeData, append = false, startOffset = 0) {
     `;
 
     const allEntries = [];
-    if (!append && treeData.parent_path) {
+    if (!append && hasParent) {
         allEntries.push({
             name: '../',
             path: treeData.parent_path || '',
@@ -81,7 +82,7 @@ function renderExplorer(treeData, append = false, startOffset = 0) {
         const orderText = entry.type === 'parent' || !Number.isFinite(Number(entry._orderNo))
             ? ''
             : Number(entry._orderNo).toLocaleString();
-        const selectedClass = state.selectedExplorerPath && state.selectedExplorerPath === entry.path ? ' selected' : '';
+        const selectedClass = String(state.selectedExplorerPath ?? '') === String(entry.path ?? '') ? ' selected' : '';
         const parentClass = entry.type === 'parent' ? ' parent-row' : '';
         return `
             <div class="explorer-row${selectedClass}${parentClass}" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.type)}" data-is-sqlite="${entry.is_sqlite ? '1' : '0'}">
@@ -159,7 +160,7 @@ async function loadTree(path = '', offset = 0, append = false) {
         const parentButton = /** @type {HTMLButtonElement | null} */ (document.getElementById('go-parent'));
         if (parentButton) {
             parentButton.dataset.parentPath = data.parent_path;
-            parentButton.disabled = !data.parent_path;
+            parentButton.disabled = !Boolean(data.has_parent);
         }
 
         const stats = data.stats || {};
@@ -408,10 +409,11 @@ function wireExplorerPanel() {
         }
 
         if (event.key === 'ArrowLeft') {
-            const parentPath = String(state.lastTreeData?.parent_path || '');
-            if (!parentPath) {
+            const hasParent = Boolean(state.lastTreeData?.has_parent);
+            if (!hasParent) {
                 return;
             }
+            const parentPath = String(state.lastTreeData?.parent_path || '');
             outputLog(`NAV ${parentPath || '..'}`);
             loadTree(parentPath);
             return;
@@ -431,7 +433,8 @@ function wireExplorerPanel() {
             requestAnimationFrame(() => {
                 const updatedRows = Array.from(domElements.explorerList.querySelectorAll('.explorer-row'));
                 if (updatedRows.length > 0) {
-                    selectRow(updatedRows[0]);
+                    const parentRow = updatedRows.find((row) => row.dataset.type === 'parent');
+                    selectRow(parentRow || updatedRows[0]);
                 }
             });
             return;

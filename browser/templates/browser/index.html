@@ -60,23 +60,31 @@
                         <div class="form-grid">
                             <div>
                                 <label class="section-label" for="llm-endpoint">LLM 서버 주소</label>
-                                <input id="llm-endpoint" type="text" placeholder="http://localhost:11434/v1">
+                                <input id="llm-endpoint" type="text" placeholder="http://intranet-llm.local:8000/v1/chat/completions">
                             </div>
                             <div>
                                 <label class="section-label" for="llm-token">토큰</label>
-                                <input id="llm-token" type="password" placeholder="token">
+                                <input id="llm-token" type="password" placeholder="sk-your-private-token">
                             </div>
                             <div>
                                 <label class="section-label" for="llm-model">모델명</label>
-                                <input id="llm-model" type="text" placeholder="gpt-4.1-mini">
+                                <input id="llm-model" type="text" placeholder="gpt-4.1-mini 또는 사설모델명">
                             </div>
                             <div>
                                 <label class="section-label" for="llm-additional-headers">Additional Header (JSON)</label>
-                                <textarea id="llm-additional-headers" placeholder='{"X-Custom-Header":"value"}' rows="3"></textarea>
+                                <textarea id="llm-additional-headers" placeholder='{
+  "Send-System-Name": "planground",
+  "User-Type": "AD_ID",
+  "X-Tenant": "internal"
+}' rows="5"></textarea>
                             </div>
                             <div>
                                 <label class="section-label" for="llm-additional-payload">Additional Payload (JSON)</label>
-                                <textarea id="llm-additional-payload" placeholder='{"top_p":0.9}' rows="3"></textarea>
+                                <textarea id="llm-additional-payload" placeholder='{
+  "top_p": 0.9,
+  "max_tokens": 1024,
+  "response_format": {"type": "json_object"}
+}' rows="5"></textarea>
                             </div>
                             <div>
                                 <label class="section-label" for="sqlite-folder-system">SQLite 폴더 (system)</label>

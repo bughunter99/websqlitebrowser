@@ -108,12 +108,22 @@ function formatDateTime(value) {
  * HTML 이스케이핑
  */
 function escapeHtml(value) {
-    return String(value ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
+    // Avoid String.prototype.replaceAll for older Edge compatibility.
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => {
+        if (ch === '&') {
+            return '&amp;';
+        }
+        if (ch === '<') {
+            return '&lt;';
+        }
+        if (ch === '>') {
+            return '&gt;';
+        }
+        if (ch === '"') {
+            return '&quot;';
+        }
+        return '&#39;';
+    });
 }
 
 /**
