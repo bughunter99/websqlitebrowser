@@ -14,6 +14,7 @@ function setTableLoadingState(target) {
 
 function renderTableResultState(target, columns, rows, options = {}) {
     target.className = '';
+    target.classList.add('table-grid-container');
     const rowCount = Number(options.rowCount || rows?.length || 0);
     const limit = Number(options.limit || 0);
     const truncated = Boolean(options.truncated);
