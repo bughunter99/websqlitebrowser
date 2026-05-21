@@ -85,6 +85,10 @@ async function testSettingsConnection() {
             hist_folder: document.getElementById('sqlite-folder-hist').value,
         };
         outputLog(`SETTINGS TEST REQUEST endpoint=${payload.endpoint || '(empty)'} model=${payload.model || '(empty)'} token=${payload.token ? '[set]' : '[empty]'} additional_headers=${payload.additional_headers ? '[set]' : '[empty]'} additional_payload=${payload.additional_payload ? '[set]' : '[empty]'}`);
+        const headersPreview = String(payload.additional_headers || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+        const payloadPreview = String(payload.additional_payload || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+        outputLog(`SETTINGS TEST RAW additional_headers_preview=${headersPreview || '(empty)'}`);
+        outputLog(`SETTINGS TEST RAW additional_payload_preview=${payloadPreview || '(empty)'}`);
         const data = await requestJson('/api/settings/test/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

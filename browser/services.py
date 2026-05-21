@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import ast
 import shutil
 import sqlite3
 import gzip
@@ -326,18 +327,19 @@ def save_settings(payload: dict[str, object]) -> dict[str, str]:
     additional_headers = str(payload.get('additional_headers', '')).strip()
     additional_payload = str(payload.get('additional_payload', '')).strip()
 
-    def _validate_json_object(raw: str, field_name: str) -> None:
-        if not raw:
-            return
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as error:
-            raise SuspiciousOperation(f'Invalid JSON in {field_name}: {error.msg}')
-        if not isinstance(parsed, dict):
-            raise SuspiciousOperation(f'{field_name} must be a JSON object.')
+    # Allow both strict JSON and Python dict literal text copied from working scripts.
+    parsed_headers = parse_json_object_setting(additional_headers, 'additional_headers')
+    parsed_payload = parse_json_object_setting(additional_payload, 'additional_payload')
 
-    _validate_json_object(additional_headers, 'additional_headers')
-    _validate_json_object(additional_payload, 'additional_payload')
+    # Persist normalized JSON text to reduce parsing ambiguity across environments.
+    normalized_additional_headers = (
+        json.dumps(parsed_headers, ensure_ascii=False, indent=2)
+        if additional_headers else ''
+    )
+    normalized_additional_payload = (
+        json.dumps(parsed_payload, ensure_ascii=False, indent=2)
+        if additional_payload else ''
+    )
 
     # 저장 전 경로 정규화 검증 (repository 기준 상대경로 또는 허용 범위 절대경로)
     resolve_repo_path(system_folder)
@@ -368,8 +370,8 @@ def save_settings(payload: dict[str, object]) -> dict[str, str]:
         'system_folder': system_folder,
         'current_folder': current_folder,
         'hist_folder': hist_folder,
-        'additional_headers': additional_headers,
-        'additional_payload': additional_payload,
+        'additional_headers': normalized_additional_headers,
+        'additional_payload': normalized_additional_payload,
     }
     path = settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -395,10 +397,21 @@ def parse_json_object_setting(raw_value: str, field_name: str) -> dict[str, obje
     raw = str(raw_value or '').strip()
     if not raw:
         return {}
+
+    # 1) Strict JSON first.
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as error:
-        raise SuspiciousOperation(f'Invalid JSON in {field_name}: {error.msg}')
+        # 2) Fallback for Python dict literals copied from Python request code.
+        #    Example: {'top_p': 0.9, 'stream': False, 'meta': None}
+        try:
+            parsed = ast.literal_eval(raw)
+        except (ValueError, SyntaxError):
+            raise SuspiciousOperation(
+                f'Invalid JSON in {field_name}: {error.msg}. '
+                'Use JSON object text like {"key":"value"} '
+                'or Python dict literal text like {\'key\': \'value\'}.'
+            )
     if not isinstance(parsed, dict):
         raise SuspiciousOperation(f'{field_name} must be a JSON object.')
     return parsed

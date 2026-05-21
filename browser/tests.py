@@ -519,6 +519,45 @@ class ParseLlmContentTests(TestCase):
         self.assertEqual(sql, '')
 
 
+class AdditionalSettingsParsingTests(TestCase):
+    """additional_headers/additional_payload 파싱 호환성 검증"""
+
+    def test_parse_json_object_setting_accepts_python_dict_literal(self):
+        raw = "{'top_p': 0.9, 'stream': False, 'meta': None}"
+        parsed = services.parse_json_object_setting(raw, 'additional_payload')
+        self.assertEqual(parsed['top_p'], 0.9)
+        self.assertEqual(parsed['stream'], False)
+        self.assertIsNone(parsed['meta'])
+
+    @override_settings(REPOSITORY_ROOT=Path('/tmp'))
+    @mock.patch('browser.services.settings_path')
+    def test_save_settings_normalizes_additional_payload_to_json(self, mocked_settings_path):
+        tempdir = tempfile.TemporaryDirectory()
+        try:
+            mocked_settings_path.return_value = Path(tempdir.name) / '.websqlitebrowser-settings.json'
+            services.save_settings(
+                {
+                    'endpoint': 'http://localhost:11434/v1',
+                    'model': 'demo',
+                    'token': 'secret',
+                    'system_folder': 'system',
+                    'current_folder': 'current',
+                    'hist_folder': 'hist',
+                    'additional_headers': "{'Send-System-Name': 'planground'}",
+                    'additional_payload': "{'top_p': 0.9, 'stream': False}",
+                }
+            )
+
+            with mocked_settings_path.return_value.open('r', encoding='utf-8') as handle:
+                saved = json.load(handle)
+
+            self.assertIn('"top_p": 0.9', saved['additional_payload'])
+            self.assertIn('"stream": false', saved['additional_payload'])
+            self.assertIn('"Send-System-Name": "planground"', saved['additional_headers'])
+        finally:
+            tempdir.cleanup()
+
+
 class FormatSizeTests(TestCase):
     """format_size() – 사람이 읽기 쉬운 크기 포맷"""
 

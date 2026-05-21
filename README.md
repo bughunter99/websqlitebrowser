@@ -838,9 +838,23 @@ from dual;
 20260521 103732 QUERY ERROR request=1 queryResultCache.shouldCache is not a function cache_removed=true
 
 
+폴더를 건너 다른 sqlite 파일이랑 조인할 수 있을까?
+다음처럼 말이야.
+이 프로그램 시작하자마자 있는 current는 폴더 이름이야.
+invoices는 sales.db에 있는 테이블이고.
+
+적당한 기준이나 방법을 제안해줘.
 
 select *
 from current.campaign_current aa, invoices;
+
+
+사설 llm 서버에 보내는거 아직도 에러나.
+동작하는 파이썬 코드에서 그 header랑 json내용을 넣었거든.
+그런데, Invalid JSON in additional_payload: Expecting value
+라고 에러나.
+연결 테스트를 누르면 http request를 보낼때 위 값을 그대로 안 쓰나?
+왜 에러나는지 확인해줘.
 
 
 
