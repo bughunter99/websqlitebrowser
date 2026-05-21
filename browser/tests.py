@@ -129,6 +129,20 @@ class BrowserApiTests(TestCase):
 		self.assertEqual(payload['columns'], ['name'])
 		self.assertEqual([row['name'] for row in payload['rows']], ['Kim Mina', 'Park Joon', 'Lee Sora'])
 
+    def test_run_query_supports_oracle_dual_sysdate(self):
+        response = self.client.post(
+            '/api/query/',
+            data=json.dumps({'path': 'sample.db', 'sql': 'SELECT sysdate FROM dual'}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        payload = response.json()
+        self.assertEqual(payload['row_count'], 1)
+        self.assertTrue(payload['rows'])
+        value = next(iter(payload['rows'][0].values()))
+        self.assertIsNotNone(value)
+
 	def test_run_query_executes_multiple_read_only_sql(self):
 		response = self.client.post(
 			'/api/query/',
@@ -313,7 +327,7 @@ class OracleDateFunctionTranslationTests(TestCase):
         sql = "SELECT to_char(sysdate - 1, 'YYYYMMDD HH24MISS') aa FROM invoices"
         translated = services.translate_oracle_sysdate(services.translate_oracle_to_char(sql))
         self.assertIn("STRFTIME('%Y%m%d %H%M%S'", translated)
-        self.assertIn("DATETIME('now', '-1 days')", translated)
+        self.assertIn("DATETIME('now', 'localtime', '-1 days')", translated)
 
     class OracleToSqliteModuleTests(TestCase):
         """독립 모듈 oracle_to_sqlite 재사용성 검증"""
@@ -322,7 +336,7 @@ class OracleDateFunctionTranslationTests(TestCase):
             sql = "SELECT to_char(sysdate - 1, 'YYYYMMDD HH24MISS') aa FROM invoices WHERE rownum <= 1"
             translated = oracle_to_sqlite.translate_oracle_sql(sql)
             self.assertIn("STRFTIME('%Y%m%d %H%M%S'", translated)
-            self.assertIn("DATETIME('now', '-1 days')", translated)
+            self.assertIn("DATETIME('now', 'localtime', '-1 days')", translated)
             self.assertIn('LIMIT 1', translated)
 
 class ValidateReadOnlySqlTests(TestCase):

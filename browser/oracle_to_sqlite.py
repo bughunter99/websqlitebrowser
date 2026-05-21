@@ -59,17 +59,17 @@ def translate_oracle_sysdate(sql: str) -> str:
         if denominator == 0:
             return match.group(0)
         seconds = (numerator / denominator) * 86400.0
-        return f"DATETIME('now', '{sign}{_format_decimal(seconds)} seconds')"
+        return f"DATETIME('now', 'localtime', '{sign}{_format_decimal(seconds)} seconds')"
 
     translated = ORACLE_SYSDATE_FRACTION_PATTERN.sub(_replace_fraction, translated)
 
     def _replace_days(match: re.Match[str]) -> str:
         sign = match.group(1)
         days = float(match.group(2))
-        return f"DATETIME('now', '{sign}{_format_decimal(days)} days')"
+        return f"DATETIME('now', 'localtime', '{sign}{_format_decimal(days)} days')"
 
     translated = ORACLE_SYSDATE_DAYS_PATTERN.sub(_replace_days, translated)
-    translated = ORACLE_SYSDATE_WORD_PATTERN.sub("DATETIME('now')", translated)
+    translated = ORACLE_SYSDATE_WORD_PATTERN.sub("DATETIME('now', 'localtime')", translated)
     return translated
 
 

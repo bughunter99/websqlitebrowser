@@ -1210,12 +1210,18 @@ def translate_oracle_to_char(sql: str) -> str:
     return oracle_to_sqlite.translate_oracle_to_char(sql)
 
 
+def ensure_oracle_dual(connection: sqlite3.Connection) -> None:
+    """Provide Oracle-like DUAL compatibility in SQLite execution sessions."""
+    connection.execute('CREATE TEMP VIEW IF NOT EXISTS dual AS SELECT 1 AS dummy')
+
+
 def run_read_only_query(database_path: Path, sql: str) -> dict[str, object]:
     statements = split_sql_statements(sql)
 
     if len(statements) == 1:
         validated_sql = oracle_to_sqlite.translate_oracle_sql(validate_read_only_sql(statements[0]))
         with connect_database(database_path) as connection:
+            ensure_oracle_dual(connection)
             cursor = connection.execute(validated_sql)
             return serialize_rows(cursor)
 
@@ -1225,6 +1231,7 @@ def run_read_only_query(database_path: Path, sql: str) -> dict[str, object]:
     ]
 
     with connect_database(database_path) as connection:
+        ensure_oracle_dual(connection)
         results: list[dict[str, object]] = []
         for index, statement in enumerate(validated_statements, start=1):
             cursor = connection.execute(statement)
@@ -1242,11 +1249,7 @@ def run_read_only_query(database_path: Path, sql: str) -> dict[str, object]:
 def run_read_only_query_across_databases(context: dict[str, object], sql: str) -> dict[str, object]:
     statements = split_sql_statements(sql)
     validated_statements = [
-        translate_oracle_to_char(
-            translate_oracle_sysdate(
-                translate_oracle_rownum(validate_read_only_sql(statement))
-            )
-        )
+        oracle_to_sqlite.translate_oracle_sql(validate_read_only_sql(statement))
         for statement in statements
     ]
 
@@ -1282,6 +1285,7 @@ def run_read_only_query_across_databases(context: dict[str, object], sql: str) -
 
     with sqlite3.connect(':memory:') as connection:
         connection.row_factory = sqlite3.Row
+        ensure_oracle_dual(connection)
 
         for alias, db_path in attach_targets:
             safe_alias = quote_identifier(alias)

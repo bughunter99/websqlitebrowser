@@ -787,10 +787,18 @@ SELECT id, name, city, joined_at
 FROM customers;
 
 
-
 oracle_to_sqlite.py 파일이 어디 있어?
 이 프로그램도 컨버전할때, 이걸 쓰게 해줘.
 
+
+sysdate를 잘못 가져오는거 같은데?
+혹시 dual이라는 뷰를 만들어서
+select sysdate
+from dual;을 실행할 수 있게 해줄 수 있어?
+
+
+여기 시간은 지금 10인데, sysdate로 아까 봤을때 1시쯤으로 나왔어.
+locale을 참고해서 sysdate가 나오게 해줘.
 
 
 
