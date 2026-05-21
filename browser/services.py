@@ -1324,6 +1324,44 @@ def run_read_only_query_across_databases(
 
         if len(validated_statements) == 1:
             cursor = connection.execute(validated_statements[0])
+            return serialize_rows(cursor)
+
+        results: list[dict[str, object]] = []
+        for index, statement in enumerate(validated_statements, start=1):
+            cursor = connection.execute(statement)
+            payload = serialize_rows(cursor)
+            payload['statement_index'] = index
+            payload['statement_sql'] = statement
+            results.append(payload)
+
+    return {
+        'results': results,
+        'result_count': len(results),
+    }
+
+
+def build_clarification_options(
+    base_question: str,
+    context: dict[str, object],
+    answer: str,
+    suggested_sql: str,
+) -> list[dict[str, str]]:
+    question = str(base_question or '').strip()
+    if not question:
+        return []
+
+    # 이미 기준 선택된 재질문에는 다시 선택지를 붙이지 않는다.
+    lowered_question = question.lower()
+    if any(marker.lower() in lowered_question for marker in CLARIFICATION_SELECTED_MARKERS):
+        return []
+
+    # SQL이 이미 명확히 제시된 경우는 추가 선택지 생성을 생략한다.
+    if str(suggested_sql or '').strip():
+        return []
+
+    answer_text = str(answer or '')
+    if not any(marker in answer_text for marker in AMBIGUOUS_ANSWER_MARKERS):
+        return []
 
     choice_specs = [
         (
@@ -1347,7 +1385,7 @@ def run_read_only_query_across_databases(
     options: list[dict[str, str]] = []
     for index, (label, rule) in enumerate(choice_specs, start=1):
         prompt = (
-            f'{base_question}\n'
+            f'{question}\n'
             f'기준 선택: {rule}.\n'
             'WARN 이전/이후 기준과 계산식(분모 0 처리 포함)을 답변에 명시하고, 가능한 경우 SQL도 함께 제시해줘.'
         )
@@ -1676,6 +1714,8 @@ def call_llm(
     try:
         with urllib.request.urlopen(request, timeout=request_timeout) as response:
             response_raw_text = response.read().decode('utf-8', errors='ignore')
+            # Debug visibility requested by user: dump full upstream response to server console.
+            print(f'[LLM RESPONSE RAW] {response_raw_text}', flush=True)
             try:
                 response_payload = json.loads(response_raw_text)
             except json.JSONDecodeError:

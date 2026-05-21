@@ -117,6 +117,10 @@ async function testSettingsConnection() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
         });
+        console.log('[LLM TEST RESPONSE OBJECT]', data);
+        if (data?.llm_debug?.response) {
+            console.log('[LLM TEST RESPONSE RAW]', data.llm_debug.response);
+        }
         if (data.llm_debug?.request) {
             outputLog(`LLM TEST OUT ${data.llm_debug.request}`);
         }

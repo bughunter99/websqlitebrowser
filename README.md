@@ -863,6 +863,9 @@ from current.campaign_current aa, invoices;
 에러나는데, services.py 16977줄에서 parse_llm_content is not defined 라고 나와.
 
 
+이번엔 services.1754 줄에서 build_clarification_option is not defined 라고 나와. 전체적으로 점검해줘. 계속 에러나.
+그리고 우선 response 받은걸 console에 다 뿌려줘. 오는지 보게.
+
 
 /////////
 
