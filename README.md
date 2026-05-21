@@ -867,6 +867,13 @@ from current.campaign_current aa, invoices;
 그리고 우선 response 받은걸 console에 다 뿌려줘. 오는지 보게.
 
 
+일단 연결 테스트는 성공했어. 내가 json에 
+"messages": [{"role"}: "user", "content":"How are you?"],]
+이렇게 넣고 있는데, 실제로 chatting에서 사용자가 넣은 메시지를
+여기 넣어야 하잖아? 그 연결을 어떻게 하면 좋을까?
+
+
+
 /////////
 
 
