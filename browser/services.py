@@ -26,8 +26,10 @@ DEFAULT_ROW_LIMIT = 100
 MAX_TABLE_LOAD_ROWS = 10000
 DEFAULT_SAMPLE_LIMIT = 3
 SETTINGS_FILENAME = '.websqlitebrowser-settings.json'
-DEFAULT_LLM_ENDPOINT = 'https://api.anthropic.com/v1/messages'
-DEFAULT_LLM_MODEL = 'claude-haiku-4-5-20251001'
+DEFAULT_REQUEST_URL = ''
+DEFAULT_REQUEST_HEADERS = '{\n  "Content-Type": "application/json"\n}'
+DEFAULT_REQUEST_JSON = '{\n  "messages": [\n    {"role": "user", "content": "{{user_prompt}}"}\n  ]\n}'
+DEFAULT_REQUEST_TIMEOUT_SECONDS = '30'
 DEFAULT_SYSTEM_FOLDER = 'system'
 DEFAULT_CURRENT_FOLDER = 'current'
 DEFAULT_HIST_FOLDER = 'hist'
@@ -273,72 +275,76 @@ def load_settings() -> dict[str, str]:
     path = settings_path()
     if not path.exists():
         return {
-            'endpoint': DEFAULT_LLM_ENDPOINT,
-            'token': '',
-            'model': DEFAULT_LLM_MODEL,
+            'request_url': DEFAULT_REQUEST_URL,
+            'request_headers': DEFAULT_REQUEST_HEADERS,
+            'request_json': DEFAULT_REQUEST_JSON,
+            'request_timeout': DEFAULT_REQUEST_TIMEOUT_SECONDS,
             'system_folder': DEFAULT_SYSTEM_FOLDER,
             'current_folder': DEFAULT_CURRENT_FOLDER,
             'hist_folder': DEFAULT_HIST_FOLDER,
-            'additional_headers': DEFAULT_ADDITIONAL_HEADERS,
-            'additional_payload': DEFAULT_ADDITIONAL_PAYLOAD,
         }
 
     with path.open('r', encoding='utf-8') as handle:
         data = json.load(handle)
 
-    endpoint = str(data.get('endpoint', DEFAULT_LLM_ENDPOINT)).strip() or DEFAULT_LLM_ENDPOINT
-    model = str(data.get('model', DEFAULT_LLM_MODEL)).strip() or DEFAULT_LLM_MODEL
+    request_url = str(data.get('request_url', data.get('endpoint', DEFAULT_REQUEST_URL))).strip()
+    request_headers = str(data.get('request_headers', data.get('additional_headers', DEFAULT_REQUEST_HEADERS))).strip()
+    request_json = str(data.get('request_json', data.get('additional_payload', DEFAULT_REQUEST_JSON))).strip()
+    request_timeout = str(data.get('request_timeout', DEFAULT_REQUEST_TIMEOUT_SECONDS)).strip() or DEFAULT_REQUEST_TIMEOUT_SECONDS
     system_folder = str(data.get('system_folder', DEFAULT_SYSTEM_FOLDER)).strip() or DEFAULT_SYSTEM_FOLDER
     current_folder = str(data.get('current_folder', DEFAULT_CURRENT_FOLDER)).strip() or DEFAULT_CURRENT_FOLDER
     hist_folder = str(data.get('hist_folder', DEFAULT_HIST_FOLDER)).strip() or DEFAULT_HIST_FOLDER
-    additional_headers = str(data.get('additional_headers', DEFAULT_ADDITIONAL_HEADERS)).strip()
-    additional_payload = str(data.get('additional_payload', DEFAULT_ADDITIONAL_PAYLOAD)).strip()
 
-    # One-time migration for previous local Ollama defaults.
-    if endpoint in LEGACY_DEFAULT_LLM_ENDPOINTS:
-        endpoint = DEFAULT_LLM_ENDPOINT
-    if model in {
-        'llama3.1',
-        'llama3',
-        'qwen2.5',
-        'tinyllama:latest',
-        'claude-3-5-haiku-20241022',
-    }:
-        model = DEFAULT_LLM_MODEL
+    if request_url in LEGACY_DEFAULT_LLM_ENDPOINTS:
+        request_url = ''
+
+    # Validate timeout format defensively and normalize to string integer.
+    try:
+        timeout_value = int(float(request_timeout))
+    except (TypeError, ValueError):
+        timeout_value = int(DEFAULT_REQUEST_TIMEOUT_SECONDS)
+    if timeout_value <= 0:
+        timeout_value = int(DEFAULT_REQUEST_TIMEOUT_SECONDS)
+    request_timeout = str(timeout_value)
 
     return {
-        'endpoint': endpoint,
-        'token': _decrypt_token(str(data.get('token', ''))),
-        'model': model,
+        'request_url': request_url,
+        'request_headers': request_headers,
+        'request_json': request_json,
+        'request_timeout': request_timeout,
         'system_folder': system_folder,
         'current_folder': current_folder,
         'hist_folder': hist_folder,
-        'additional_headers': additional_headers,
-        'additional_payload': additional_payload,
     }
 
 
 def save_settings(payload: dict[str, object]) -> dict[str, str]:
-    endpoint = str(payload.get('endpoint', '')).strip() or DEFAULT_LLM_ENDPOINT
-    model = str(payload.get('model', '')).strip() or DEFAULT_LLM_MODEL
+    request_url = str(payload.get('request_url', '')).strip()
+    request_headers = str(payload.get('request_headers', '')).strip() or DEFAULT_REQUEST_HEADERS
+    request_json = str(payload.get('request_json', '')).strip() or DEFAULT_REQUEST_JSON
+    request_timeout_raw = str(payload.get('request_timeout', DEFAULT_REQUEST_TIMEOUT_SECONDS)).strip() or DEFAULT_REQUEST_TIMEOUT_SECONDS
     system_folder = str(payload.get('system_folder', '')).strip() or DEFAULT_SYSTEM_FOLDER
     current_folder = str(payload.get('current_folder', '')).strip() or DEFAULT_CURRENT_FOLDER
     hist_folder = str(payload.get('hist_folder', '')).strip() or DEFAULT_HIST_FOLDER
-    additional_headers = str(payload.get('additional_headers', '')).strip()
-    additional_payload = str(payload.get('additional_payload', '')).strip()
+    try:
+        request_timeout = int(float(request_timeout_raw))
+    except (TypeError, ValueError):
+        raise SuspiciousOperation('request_timeout must be a positive number.')
+    if request_timeout <= 0:
+        raise SuspiciousOperation('request_timeout must be a positive number.')
 
     # Allow both strict JSON and Python dict literal text copied from working scripts.
-    parsed_headers = parse_json_object_setting(additional_headers, 'additional_headers')
-    parsed_payload = parse_json_object_setting(additional_payload, 'additional_payload')
+    parsed_headers = parse_json_object_setting(request_headers, 'request_headers')
+    parsed_payload = parse_json_object_setting(request_json, 'request_json')
 
     # Persist normalized JSON text to reduce parsing ambiguity across environments.
-    normalized_additional_headers = (
+    normalized_request_headers = (
         json.dumps(parsed_headers, ensure_ascii=False, indent=2)
-        if additional_headers else ''
+        if request_headers else DEFAULT_REQUEST_HEADERS
     )
-    normalized_additional_payload = (
+    normalized_request_json = (
         json.dumps(parsed_payload, ensure_ascii=False, indent=2)
-        if additional_payload else ''
+        if request_json else DEFAULT_REQUEST_JSON
     )
 
     # 저장 전 경로 정규화 검증 (repository 기준 상대경로 또는 허용 범위 절대경로)
@@ -346,32 +352,14 @@ def save_settings(payload: dict[str, object]) -> dict[str, str]:
     resolve_repo_path(current_folder)
     resolve_repo_path(hist_folder)
 
-    incoming_token = str(payload.get('token', '')).strip()
-    # UI GET 응답은 토큰을 "***"로 마스킹한다. 사용자가 다른 설정만 저장할 때
-    # 기존 토큰을 덮어쓰지 않도록 파일에 저장된 암호문을 그대로 유지한다.
-    existing_encrypted_token = ''
-    if settings_path().exists():
-        try:
-            with settings_path().open('r', encoding='utf-8') as handle:
-                existing_raw = json.load(handle)
-                existing_encrypted_token = str(existing_raw.get('token', '')).strip()
-        except (OSError, json.JSONDecodeError):
-            existing_encrypted_token = ''
-
-    if incoming_token == '***':
-        token_to_store = existing_encrypted_token
-    else:
-        token_to_store = _encrypt_token(incoming_token)
-
     data = {
-        'endpoint': endpoint,
-        'token': token_to_store,
-        'model': model,
+        'request_url': request_url,
+        'request_headers': normalized_request_headers,
+        'request_json': normalized_request_json,
+        'request_timeout': str(request_timeout),
         'system_folder': system_folder,
         'current_folder': current_folder,
         'hist_folder': hist_folder,
-        'additional_headers': normalized_additional_headers,
-        'additional_payload': normalized_additional_payload,
     }
     path = settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -382,14 +370,13 @@ def save_settings(payload: dict[str, object]) -> dict[str, str]:
     
     # 저장 후 반환할 때는 토큰 마스킹
     return {
-        'endpoint': data['endpoint'],
-        'token': '***' if data['token'] else '',
-        'model': data['model'],
+        'request_url': data['request_url'],
+        'request_headers': data['request_headers'],
+        'request_json': data['request_json'],
+        'request_timeout': data['request_timeout'],
         'system_folder': data['system_folder'],
         'current_folder': data['current_folder'],
         'hist_folder': data['hist_folder'],
-        'additional_headers': data['additional_headers'],
-        'additional_payload': data['additional_payload'],
     }
 
 
@@ -1453,6 +1440,77 @@ def _upsert_header_case_insensitive(headers: dict[str, str], key: str, value: st
     headers[target] = value
 
 
+def _render_template_value(value: object, variables: dict[str, object]) -> object:
+    if isinstance(value, dict):
+        return {str(k): _render_template_value(v, variables) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_render_template_value(v, variables) for v in value]
+    if not isinstance(value, str):
+        return value
+
+    text = value
+    # If string is a pure token and the target value is non-string, return as native type.
+    if text.startswith('{{') and text.endswith('}}') and text.count('{{') == 1 and text.count('}}') == 1:
+        key = text[2:-2].strip()
+        if key in variables:
+            return variables[key]
+
+    for key, raw in variables.items():
+        text = text.replace(f'{{{{{key}}}}}', str(raw))
+    return text
+
+
+def _extract_text_from_llm_response(payload: object) -> str:
+    if isinstance(payload, str):
+        return payload.strip()
+    if isinstance(payload, dict):
+        # Common OpenAI-compatible pattern
+        choices = payload.get('choices')
+        if isinstance(choices, list) and choices:
+            first_choice = choices[0]
+            if isinstance(first_choice, dict):
+                message_block = first_choice.get('message')
+                if isinstance(message_block, dict):
+                    content = message_block.get('content')
+                    if isinstance(content, str) and content.strip():
+                        return content.strip()
+                text_value = first_choice.get('text')
+                if isinstance(text_value, str) and text_value.strip():
+                    return text_value.strip()
+
+        # Common Anthropic-like pattern
+        content_blocks = payload.get('content')
+        if isinstance(content_blocks, list):
+            text_parts: list[str] = []
+            for item in content_blocks:
+                if isinstance(item, dict):
+                    text_value = item.get('text')
+                    if isinstance(text_value, str) and text_value.strip():
+                        text_parts.append(text_value.strip())
+            if text_parts:
+                return '\n'.join(text_parts).strip()
+
+        # Generic direct keys
+        for key in ('answer', 'message', 'output_text', 'response', 'result', 'text'):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        # Recursive fallback
+        for value in payload.values():
+            extracted = _extract_text_from_llm_response(value)
+            if extracted:
+                return extracted
+
+    if isinstance(payload, list):
+        for item in payload:
+            extracted = _extract_text_from_llm_response(item)
+            if extracted:
+                return extracted
+
+    return ''
+
+
 def call_llm(
     settings_data: dict[str, str],
     question: str,
@@ -1460,21 +1518,23 @@ def call_llm(
     database_path: Path | None = None,
     folder_path: Path | None = None,
 ) -> dict[str, object]:
-    endpoint_input_raw = str(settings_data.get('endpoint', ''))
-    model_input_raw = str(settings_data.get('model', ''))
-    token_input_raw = str(settings_data.get('token', ''))
-    additional_headers_input_raw = str(settings_data.get('additional_headers', ''))
-    additional_payload_input_raw = str(settings_data.get('additional_payload', ''))
+    request_url = str(settings_data.get('request_url', settings_data.get('endpoint', ''))).strip()
+    request_headers_input_raw = str(settings_data.get('request_headers', settings_data.get('additional_headers', '')))
+    request_json_input_raw = str(settings_data.get('request_json', settings_data.get('additional_payload', '')))
+    request_timeout_raw = str(settings_data.get('request_timeout', DEFAULT_REQUEST_TIMEOUT_SECONDS)).strip()
 
-    endpoint = normalise_chat_endpoint(endpoint_input_raw)
-    if not endpoint:
-        raise SuspiciousOperation('LLM endpoint is required.')
-    provider = detect_llm_provider(endpoint)
-    trace: list[str] = [f'detect provider={provider} endpoint={endpoint}']
+    if not request_url:
+        raise SuspiciousOperation('request_url is required.')
 
-    model = model_input_raw.strip()
-    if not model:
-        raise SuspiciousOperation('LLM model is required.')
+    try:
+        request_timeout = int(float(request_timeout_raw))
+    except (TypeError, ValueError):
+        raise SuspiciousOperation('request_timeout must be a positive number.')
+    if request_timeout <= 0:
+        raise SuspiciousOperation('request_timeout must be a positive number.')
+
+    provider = 'custom-http'
+    trace: list[str] = [f'detect provider={provider} request_url={request_url} timeout={request_timeout}s']
 
     mode = str(context.get('mode', 'single_db'))
     if mode == 'folder':
@@ -1516,121 +1576,67 @@ def call_llm(
         ensure_ascii=False,
         indent=2,
     )
-    headers = {
-        'Content-Type': 'application/json',
-    }
-    additional_headers = parse_json_object_setting(
-        additional_headers_input_raw,
-        'additional_headers',
-    )
-    additional_header_keys: set[str] = set()
-    overridden_additional_headers: list[str] = []
 
-    for key, value in additional_headers.items():
+    request_headers = parse_json_object_setting(
+        request_headers_input_raw,
+        'request_headers',
+    )
+    headers: dict[str, str] = {}
+    for key, value in request_headers.items():
         header_key = str(key).strip()
         if not header_key:
             continue
         _upsert_header_case_insensitive(headers, header_key, str(value))
-        additional_header_keys.add(header_key.lower())
+    if not any(k.lower() == 'content-type' for k in headers.keys()):
+        _upsert_header_case_insensitive(headers, 'Content-Type', 'application/json')
 
-    token = token_input_raw.strip()
-    if provider == 'anthropic':
-        if not token:
-            raise SuspiciousOperation('Anthropic API key is required.')
-        if 'x-api-key' in additional_header_keys:
-            overridden_additional_headers.append('x-api-key')
-        if 'anthropic-version' in additional_header_keys:
-            overridden_additional_headers.append('anthropic-version')
-        _upsert_header_case_insensitive(headers, 'x-api-key', token)
-        _upsert_header_case_insensitive(headers, 'anthropic-version', '2023-06-01')
-        payload = {
-            'model': model,
-            'max_tokens': 1024,
-            'temperature': 0.2,
-            'system': system_prompt,
-            'messages': [
-                {'role': 'user', 'content': user_prompt},
-            ],
-        }
-    else:
-        payload = {
-            'model': model,
-            'messages': [
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': user_prompt},
-            ],
-            'temperature': 0.2,
-        }
-        if token:
-            if 'authorization' in additional_header_keys:
-                overridden_additional_headers.append('authorization')
-            if 'x-api-key' in additional_header_keys:
-                overridden_additional_headers.append('x-api-key')
-            if 'api-key' in additional_header_keys:
-                overridden_additional_headers.append('api-key')
-            _upsert_header_case_insensitive(headers, 'Authorization', f'Bearer {token}')
-            # OpenAI 호환 사설 서버마다 요구 키가 달라 공통 API 키 헤더를 함께 제공한다.
-            _upsert_header_case_insensitive(headers, 'x-api-key', token)
-            _upsert_header_case_insensitive(headers, 'api-key', token)
-
-    additional_payload = parse_json_object_setting(
-        additional_payload_input_raw,
-        'additional_payload',
+    payload_template = parse_json_object_setting(
+        request_json_input_raw,
+        'request_json',
     )
-    reserved_payload_keys = {
-        'additional_headers',
-        'additional_payload',
-        'endpoint',
-        'model',
-        'token',
-        'headers',
-        'header_keys',
-        'payload_keys',
-        'raw_input',
+    payload_variables: dict[str, object] = {
+        'question': question,
+        'system_prompt': system_prompt,
+        'user_prompt': user_prompt,
+        'context': context,
+        'context_json': json.dumps(context, ensure_ascii=False),
+        'database_path': str(database_path) if database_path else '',
+        'folder_path': str(folder_path) if folder_path else '',
     }
-    removed_payload_keys: list[str] = []
-    for key in list(additional_payload.keys()):
-        key_text = str(key).strip()
-        if key_text.lower() in reserved_payload_keys:
-            removed_payload_keys.append(key_text)
-            del additional_payload[key]
-
-    if removed_payload_keys:
-        trace.append(
-            'ignore additional_payload reserved keys: '
-            + ', '.join(sorted(set(removed_payload_keys)))
-        )
-
-    if additional_payload:
-        payload.update(additional_payload)
+    payload = _render_template_value(payload_template, payload_variables)
+    if not isinstance(payload, dict):
+        raise SuspiciousOperation('request_json must render to a JSON object.')
 
     request = urllib.request.Request(
-        endpoint,
+        request_url,
         data=json.dumps(payload).encode('utf-8'),
         headers=headers,
         method='POST',
     )
     debug_headers = _masked_headers_for_debug(headers)
     request_effective_headers = _masked_headers_for_debug(dict(request.header_items()))
-    if overridden_additional_headers:
-        unique_overridden = sorted(set(overridden_additional_headers))
-        trace.append(f'override additional headers: {", ".join(unique_overridden)}')
     trace.append(f'apply headers count={len(debug_headers)} keys={", ".join(sorted(debug_headers.keys()))}')
-    trace.append(f'send llm request model={model}')
+    trace.append('send llm request custom-http')
 
+    response_payload: object
+    response_raw_text = ''
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            response_payload = json.loads(response.read().decode('utf-8'))
+        with urllib.request.urlopen(request, timeout=request_timeout) as response:
+            response_raw_text = response.read().decode('utf-8', errors='ignore')
+            try:
+                response_payload = json.loads(response_raw_text)
+            except json.JSONDecodeError:
+                response_payload = {'raw_text': response_raw_text}
     except urllib.error.HTTPError as error:
         detail = error.read().decode('utf-8', errors='ignore').strip()
         request_summary = {
             'provider': provider,
-            'endpoint': endpoint,
+            'request_url': request_url,
             'method': 'POST',
-            'model': model,
             'payload_keys': sorted(list(payload.keys())),
             'effective_headers': request_effective_headers,
-            'custom_header_keys': sorted(additional_headers.keys()),
+            'custom_header_keys': sorted(request_headers.keys()),
+            'request_timeout': request_timeout,
         }
         message = (
             f'LLM request failed with status {error.code}. '
@@ -1638,26 +1644,6 @@ def call_llm(
         )
         if detail:
             message = f'{message} response={detail}'
-
-        # Anthropic model-not-found diagnostics: include currently available model IDs.
-        if provider == 'anthropic' and error.code == 404 and detail:
-            try:
-                detail_payload = json.loads(detail)
-            except json.JSONDecodeError:
-                detail_payload = {}
-
-            if isinstance(detail_payload, dict):
-                error_block = detail_payload.get('error')
-                if isinstance(error_block, dict):
-                    error_type = str(error_block.get('type', '')).strip()
-                    error_message = str(error_block.get('message', '')).strip().lower()
-                    if error_type == 'not_found_error' and error_message.startswith('model:'):
-                        available_models = fetch_anthropic_available_models(endpoint, token)
-                        if available_models:
-                            preview = ', '.join(available_models[:10])
-                            message = f'{message} available_models={preview}'
-                        else:
-                            message = f'{message} available_models=(unable to fetch)'
         raise SuspiciousOperation(message)
     except urllib.error.URLError as error:
         raise SuspiciousOperation(f'LLM connection failed: {error.reason}')
@@ -1686,8 +1672,9 @@ def call_llm(
         json.dumps(
             {
                 'method': 'POST',
-                'endpoint': endpoint,
+                'request_url': request_url,
                 'headers': request_effective_headers,
+                'timeout_seconds': request_timeout,
                 'body': display_payload,
             },
             ensure_ascii=False,
@@ -1695,33 +1682,17 @@ def call_llm(
         )
     )
 
-    response_preview = truncate_text(json.dumps(response_payload, ensure_ascii=False))
-
-    message = ''
-    if provider == 'anthropic':
-        content_blocks = response_payload.get('content') or []
-        text_parts: list[str] = []
-        if isinstance(content_blocks, list):
-            for block in content_blocks:
-                if isinstance(block, dict) and block.get('type') == 'text':
-                    text_value = str(block.get('text', '')).strip()
-                    if text_value:
-                        text_parts.append(text_value)
-        message = '\n'.join(text_parts).strip()
+    if isinstance(response_payload, (dict, list)):
+        response_preview = truncate_text(json.dumps(response_payload, ensure_ascii=False))
     else:
-        choices = response_payload.get('choices') or []
-        if choices:
-            first_choice = choices[0]
-            if isinstance(first_choice, dict):
-                message_block = first_choice.get('message', {})
-                if isinstance(message_block, dict):
-                    message = str(message_block.get('content', '')).strip()
-                if not message:
-                    message = str(first_choice.get('text', '')).strip()
+        response_preview = truncate_text(str(response_payload))
 
-    if not message:
-        raise SuspiciousOperation('LLM response did not include a message.')
-    trace.append('parse llm response content')
+    message = _extract_text_from_llm_response(response_payload)
+    if not message and response_raw_text.strip():
+        message = response_raw_text.strip()
+    if not message and isinstance(response_payload, (dict, list)):
+        message = json.dumps(response_payload, ensure_ascii=False)
+    trace.append('parse llm response content (generic)')
 
     answer, suggested_sql = parse_llm_content(message)
     if not answer:

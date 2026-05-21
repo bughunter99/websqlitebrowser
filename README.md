@@ -857,6 +857,10 @@ from current.campaign_current aa, invoices;
 왜 에러나는지 확인해줘.
 
 
+이번엔 ERROR 서버 응답 형식이 올바르지 않습니다 라고 나와. 그냥 http requst의 함수 인자를 setting에서 정할 수 있게 url이랑 header, json, timeout만 설정하게 setting을 다 바꿔줘.
+
+
+
 
 
 /////////

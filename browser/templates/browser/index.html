@@ -77,44 +77,33 @@
                         <h3 class="panel-title">Setting</h3>
                         <div class="form-grid">
                             <div>
-                                <label class="section-label" for="llm-endpoint">LLM 서버 주소</label>
-                                <input id="llm-endpoint" type="text" placeholder="http://intranet-llm.local:8000/v1/chat/completions">
+                                <label class="section-label" for="request-url">Request URL</label>
+                                <input id="request-url" type="text" placeholder="http://intranet-llm.local:8000/v1/chat/completions">
                             </div>
                             <div>
-                                <label class="section-label" for="llm-token">토큰</label>
-                                <input id="llm-token" type="password" placeholder="sk-your-private-token">
+                                <label class="section-label" for="request-timeout">Timeout (seconds)</label>
+                                <input id="request-timeout" type="number" min="1" step="1" placeholder="30">
                             </div>
                             <div>
-                                <label class="section-label" for="llm-model">모델명</label>
-                                <input id="llm-model" type="text" placeholder="gpt-4.1-mini 또는 사설모델명">
-                            </div>
-                            <div>
-                                <label class="section-label" for="llm-additional-headers">Additional Header (JSON)</label>
-                                <textarea id="llm-additional-headers" placeholder='{
-  "Send-System-Name": "planground",
-  "User-Type": "AD_ID",
-  "X-Tenant": "internal"
+                                <label class="section-label" for="request-headers">Headers (JSON)</label>
+                                <textarea id="request-headers" placeholder='{
+  "Content-Type": "application/json",
+  "Authorization": "Bearer sk-your-private-token"
 }' rows="5"></textarea>
                             </div>
                             <div>
-                                <label class="section-label" for="llm-additional-payload">Additional Payload (JSON)</label>
-                                <textarea id="llm-additional-payload" placeholder='{
-  "top_p": 0.9,
-  "max_tokens": 1024,
-  "response_format": {"type": "json_object"}
-}' rows="5"></textarea>
+                                <label class="section-label" for="request-json">JSON Body (JSON)</label>
+                                <textarea id="request-json" placeholder='{
+  "model": "gpt-4.1-mini",
+  "messages": [
+    {"role": "system", "content": "{{system_prompt}}"},
+    {"role": "user", "content": "{{user_prompt}}"}
+  ]
+}' rows="6"></textarea>
                             </div>
-                            <div>
-                                <label class="section-label" for="sqlite-folder-system">SQLite 폴더 (system)</label>
-                                <input id="sqlite-folder-system" type="text" placeholder="system">
-                            </div>
-                            <div>
-                                <label class="section-label" for="sqlite-folder-current">SQLite 폴더 (current)</label>
-                                <input id="sqlite-folder-current" type="text" placeholder="current">
-                            </div>
-                            <div>
-                                <label class="section-label" for="sqlite-folder-hist">SQLite 폴더 (hist)</label>
-                                <input id="sqlite-folder-hist" type="text" placeholder="hist">
+                            <div class="button-row">
+                                <button class="button-secondary" id="fill-template-openai">OpenAI 예시</button>
+                                <button class="button-secondary" id="fill-template-custom">커스텀 예시</button>
                             </div>
                             <div class="button-row">
                                 <button class="button-primary" id="save-settings">저장</button>
@@ -192,7 +181,7 @@
     <script src="{% static 'browser/app.panel.js' %}?v=20260516-1"></script>
     <script src="{% static 'browser/app.explorer.js' %}?v=20260520-1"></script>
     <script src="{% static 'browser/app.grid-interactions.js' %}?v=20260516-1"></script>
-    <script src="{% static 'browser/app.settings.js' %}?v=20260521-4"></script>
+    <script src="{% static 'browser/app.settings.js' %}?v=20260521-6"></script>
     <script src="{% static 'browser/app.chat.js' %}?v=20260517-16"></script>
     <script src="{% static 'browser/app.output.js' %}?v=20260516-1"></script>
     <script src="{% static 'browser/app.layout.js' %}?v=20260517-2"></script>

@@ -241,24 +241,20 @@ def settings_test_view(request: HttpRequest) -> JsonResponse:
 	try:
 		payload = json.loads(request.body or '{}')
 		stored_settings = load_settings()
-		incoming_endpoint = str(payload.get('endpoint', '')).strip()
-		incoming_model = str(payload.get('model', '')).strip()
-		incoming_token = str(payload.get('token', '')).strip()
+		incoming_request_url = str(payload.get('request_url', '')).strip()
+		incoming_request_headers = str(payload.get('request_headers', '')).strip()
+		incoming_request_json = str(payload.get('request_json', '')).strip()
+		incoming_request_timeout = str(payload.get('request_timeout', '')).strip()
 
 		settings_data = {
-			'endpoint': incoming_endpoint or stored_settings.get('endpoint', ''),
-			'model': incoming_model or stored_settings.get('model', ''),
-			'token': stored_settings.get('token', ''),
-			'additional_headers': str(payload.get('additional_headers', '')).strip() or stored_settings.get('additional_headers', ''),
-			'additional_payload': str(payload.get('additional_payload', '')).strip() or stored_settings.get('additional_payload', ''),
+			'request_url': incoming_request_url or stored_settings.get('request_url', ''),
+			'request_headers': incoming_request_headers or stored_settings.get('request_headers', ''),
+			'request_json': incoming_request_json or stored_settings.get('request_json', ''),
+			'request_timeout': incoming_request_timeout or stored_settings.get('request_timeout', '30'),
 			'system_folder': str(payload.get('system_folder', '')).strip() or stored_settings.get('system_folder', 'system'),
 			'current_folder': str(payload.get('current_folder', '')).strip() or stored_settings.get('current_folder', 'current'),
 			'hist_folder': str(payload.get('hist_folder', '')).strip() or stored_settings.get('hist_folder', 'hist'),
 		}
-
-		# UI에서 마스킹 토큰("***")이 다시 전달될 수 있어 실제 토큰을 덮어쓰지 않도록 보호.
-		if incoming_token and incoming_token != '***':
-			settings_data['token'] = incoming_token
 
 		result = call_llm(
 			settings_data,

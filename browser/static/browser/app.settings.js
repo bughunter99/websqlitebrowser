@@ -3,45 +3,76 @@
  * app.settings.js - Settings panel wiring
  */
 
-const OPENAI_COMPAT_EXAMPLE = {
-    endpoint: 'http://intranet-llm.local:8000/v1/chat/completions',
-    model: 'gpt-4.1-mini',
-    additionalHeaders: JSON.stringify({
+const CUSTOM_HTTP_EXAMPLE = {
+    requestUrl: 'http://intranet-llm.local:8000/v1/chat/completions',
+    requestHeaders: JSON.stringify({
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer sk-your-private-token',
         'Send-System-Name': 'planground',
-        'User-Type': 'AD_ID',
-        'X-Tenant': 'internal',
     }, null, 2),
-    additionalPayload: JSON.stringify({
-        top_p: 0.9,
-        max_tokens: 1024,
-        response_format: { type: 'json_object' },
+    requestJson: JSON.stringify({
+        model: 'gpt-4.1-mini',
+        messages: [
+            { role: 'system', content: '{{system_prompt}}' },
+            { role: 'user', content: '{{user_prompt}}' },
+        ],
+        temperature: 0.2,
     }, null, 2),
+    requestTimeout: '30',
 };
 
+const GENERIC_CUSTOM_EXAMPLE = {
+    requestUrl: 'http://intranet-llm.local:8080/api/chat',
+    requestHeaders: JSON.stringify({
+        'Content-Type': 'application/json',
+        'X-API-Key': 'replace-with-your-key',
+    }, null, 2),
+    requestJson: JSON.stringify({
+        prompt: '{{user_prompt}}',
+        context: '{{context_json}}',
+        system: '{{system_prompt}}',
+    }, null, 2),
+    requestTimeout: '45',
+};
+
+function applyTemplate(template) {
+    const urlEl = /** @type {HTMLInputElement | null} */ (document.getElementById('request-url'));
+    const headersEl = /** @type {HTMLTextAreaElement | null} */ (document.getElementById('request-headers'));
+    const jsonEl = /** @type {HTMLTextAreaElement | null} */ (document.getElementById('request-json'));
+    const timeoutEl = /** @type {HTMLInputElement | null} */ (document.getElementById('request-timeout'));
+    if (!urlEl || !headersEl || !jsonEl || !timeoutEl) {
+        return;
+    }
+    urlEl.value = template.requestUrl;
+    headersEl.value = template.requestHeaders;
+    jsonEl.value = template.requestJson;
+    timeoutEl.value = template.requestTimeout;
+}
+
 function applyOpenAiCompatExamplesIfEmpty() {
-    const endpointEl = /** @type {HTMLInputElement | null} */ (document.getElementById('llm-endpoint'));
-    const modelEl = /** @type {HTMLInputElement | null} */ (document.getElementById('llm-model'));
-    const headersEl = /** @type {HTMLTextAreaElement | null} */ (document.getElementById('llm-additional-headers'));
-    const payloadEl = /** @type {HTMLTextAreaElement | null} */ (document.getElementById('llm-additional-payload'));
-    if (!endpointEl || !modelEl || !headersEl || !payloadEl) {
+    const urlEl = /** @type {HTMLInputElement | null} */ (document.getElementById('request-url'));
+    const headersEl = /** @type {HTMLTextAreaElement | null} */ (document.getElementById('request-headers'));
+    const jsonEl = /** @type {HTMLTextAreaElement | null} */ (document.getElementById('request-json'));
+    const timeoutEl = /** @type {HTMLInputElement | null} */ (document.getElementById('request-timeout'));
+    if (!urlEl || !headersEl || !jsonEl || !timeoutEl) {
         return false;
     }
 
     let changed = false;
-    if (!String(endpointEl.value || '').trim()) {
-        endpointEl.value = OPENAI_COMPAT_EXAMPLE.endpoint;
-        changed = true;
-    }
-    if (!String(modelEl.value || '').trim()) {
-        modelEl.value = OPENAI_COMPAT_EXAMPLE.model;
+    if (!String(urlEl.value || '').trim()) {
+        urlEl.value = CUSTOM_HTTP_EXAMPLE.requestUrl;
         changed = true;
     }
     if (!String(headersEl.value || '').trim()) {
-        headersEl.value = OPENAI_COMPAT_EXAMPLE.additionalHeaders;
+        headersEl.value = CUSTOM_HTTP_EXAMPLE.requestHeaders;
         changed = true;
     }
-    if (!String(payloadEl.value || '').trim()) {
-        payloadEl.value = OPENAI_COMPAT_EXAMPLE.additionalPayload;
+    if (!String(jsonEl.value || '').trim()) {
+        jsonEl.value = CUSTOM_HTTP_EXAMPLE.requestJson;
+        changed = true;
+    }
+    if (!String(timeoutEl.value || '').trim()) {
+        timeoutEl.value = CUSTOM_HTTP_EXAMPLE.requestTimeout;
         changed = true;
     }
 
@@ -51,17 +82,13 @@ function applyOpenAiCompatExamplesIfEmpty() {
 async function loadSettings() {
     try {
         const data = await requestJson('/api/settings/');
-        document.getElementById('llm-endpoint').value = data.settings.endpoint || '';
-        document.getElementById('llm-token').value = data.settings.token || '';
-        document.getElementById('llm-model').value = data.settings.model || '';
-        document.getElementById('llm-additional-headers').value = data.settings.additional_headers || '';
-        document.getElementById('llm-additional-payload').value = data.settings.additional_payload || '';
-        document.getElementById('sqlite-folder-system').value = data.settings.system_folder || 'system';
-        document.getElementById('sqlite-folder-current').value = data.settings.current_folder || 'current';
-        document.getElementById('sqlite-folder-hist').value = data.settings.hist_folder || 'hist';
+        document.getElementById('request-url').value = data.settings.request_url || '';
+        document.getElementById('request-headers').value = data.settings.request_headers || '';
+        document.getElementById('request-json').value = data.settings.request_json || '';
+        document.getElementById('request-timeout').value = data.settings.request_timeout || '30';
         const filledWithExamples = applyOpenAiCompatExamplesIfEmpty();
         document.getElementById('settings-status').textContent = filledWithExamples
-            ? '서버 설정을 불러왔습니다. 비어 있는 항목에는 OpenAI 호환 예시를 채웠습니다.'
+            ? '설정을 불러왔습니다. 비어 있는 항목에는 HTTP 요청 예시를 채웠습니다.'
             : '서버 설정을 불러왔습니다.';
     } catch (error) {
         document.getElementById('settings-status').textContent = error.message;
@@ -75,20 +102,16 @@ async function testSettingsConnection() {
 
     try {
         const payload = {
-            endpoint: document.getElementById('llm-endpoint').value,
-            token: document.getElementById('llm-token').value,
-            model: document.getElementById('llm-model').value,
-            additional_headers: document.getElementById('llm-additional-headers').value,
-            additional_payload: document.getElementById('llm-additional-payload').value,
-            system_folder: document.getElementById('sqlite-folder-system').value,
-            current_folder: document.getElementById('sqlite-folder-current').value,
-            hist_folder: document.getElementById('sqlite-folder-hist').value,
+            request_url: document.getElementById('request-url').value,
+            request_headers: document.getElementById('request-headers').value,
+            request_json: document.getElementById('request-json').value,
+            request_timeout: document.getElementById('request-timeout').value,
         };
-        outputLog(`SETTINGS TEST REQUEST endpoint=${payload.endpoint || '(empty)'} model=${payload.model || '(empty)'} token=${payload.token ? '[set]' : '[empty]'} additional_headers=${payload.additional_headers ? '[set]' : '[empty]'} additional_payload=${payload.additional_payload ? '[set]' : '[empty]'}`);
-        const headersPreview = String(payload.additional_headers || '').replace(/\s+/g, ' ').trim().slice(0, 220);
-        const payloadPreview = String(payload.additional_payload || '').replace(/\s+/g, ' ').trim().slice(0, 220);
-        outputLog(`SETTINGS TEST RAW additional_headers_preview=${headersPreview || '(empty)'}`);
-        outputLog(`SETTINGS TEST RAW additional_payload_preview=${payloadPreview || '(empty)'}`);
+        outputLog(`SETTINGS TEST REQUEST request_url=${payload.request_url || '(empty)'} request_timeout=${payload.request_timeout || '(empty)'} request_headers=${payload.request_headers ? '[set]' : '[empty]'} request_json=${payload.request_json ? '[set]' : '[empty]'}`);
+        const headersPreview = String(payload.request_headers || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+        const payloadPreview = String(payload.request_json || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+        outputLog(`SETTINGS TEST RAW request_headers_preview=${headersPreview || '(empty)'}`);
+        outputLog(`SETTINGS TEST RAW request_json_preview=${payloadPreview || '(empty)'}`);
         const data = await requestJson('/api/settings/test/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -103,8 +126,8 @@ async function testSettingsConnection() {
         if (data.llm_debug?.summary) {
             outputLog(`LLM TEST SUMMARY ${data.llm_debug.summary}`);
         }
-        outputLog(`SETTINGS TEST RESPONSE ok=true provider=${data.provider || 'unknown'}`);
-        status.textContent = `연결 성공: ${data.provider}`;
+        outputLog(`SETTINGS TEST RESPONSE ok=true provider=${data.provider || 'custom-http'}`);
+        status.textContent = `연결 성공: ${data.provider || 'custom-http'}`;
     } catch (error) {
         status.className = 'status-box error';
         status.textContent = error.message;
@@ -115,8 +138,32 @@ async function testSettingsConnection() {
 function wireSettingsPanel() {
     const saveButton = document.getElementById('save-settings');
     const testButton = document.getElementById('test-settings');
+    const fillOpenAiTemplateButton = document.getElementById('fill-template-openai');
+    const fillCustomTemplateButton = document.getElementById('fill-template-custom');
     if (!saveButton) {
         return;
+    }
+
+    if (fillOpenAiTemplateButton) {
+        fillOpenAiTemplateButton.addEventListener('click', () => {
+            applyTemplate(CUSTOM_HTTP_EXAMPLE);
+            const status = document.getElementById('settings-status');
+            if (status) {
+                status.className = 'status-box';
+                status.textContent = 'OpenAI 호환 요청 예시를 채웠습니다.';
+            }
+        });
+    }
+
+    if (fillCustomTemplateButton) {
+        fillCustomTemplateButton.addEventListener('click', () => {
+            applyTemplate(GENERIC_CUSTOM_EXAMPLE);
+            const status = document.getElementById('settings-status');
+            if (status) {
+                status.className = 'status-box';
+                status.textContent = '커스텀 HTTP 요청 예시를 채웠습니다.';
+            }
+        });
     }
 
     saveButton.addEventListener('click', async () => {
@@ -129,14 +176,10 @@ function wireSettingsPanel() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    endpoint: /** @type {HTMLInputElement} */ (document.getElementById('llm-endpoint')).value,
-                    token: /** @type {HTMLInputElement} */ (document.getElementById('llm-token')).value,
-                    model: /** @type {HTMLInputElement} */ (document.getElementById('llm-model')).value,
-                    additional_headers: /** @type {HTMLTextAreaElement} */ (document.getElementById('llm-additional-headers')).value,
-                    additional_payload: /** @type {HTMLTextAreaElement} */ (document.getElementById('llm-additional-payload')).value,
-                    system_folder: /** @type {HTMLInputElement} */ (document.getElementById('sqlite-folder-system')).value,
-                    current_folder: /** @type {HTMLInputElement} */ (document.getElementById('sqlite-folder-current')).value,
-                    hist_folder: /** @type {HTMLInputElement} */ (document.getElementById('sqlite-folder-hist')).value,
+                    request_url: /** @type {HTMLInputElement} */ (document.getElementById('request-url')).value,
+                    request_headers: /** @type {HTMLTextAreaElement} */ (document.getElementById('request-headers')).value,
+                    request_json: /** @type {HTMLTextAreaElement} */ (document.getElementById('request-json')).value,
+                    request_timeout: /** @type {HTMLInputElement} */ (document.getElementById('request-timeout')).value,
                 }),
             });
             status.textContent = '서버에 설정을 저장했습니다.';
