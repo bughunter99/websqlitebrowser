@@ -10,10 +10,12 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.core.exceptions import SuspiciousOperation
 from django.utils.html import escape
+from django.utils import timezone
 
 from . import oracle_to_sqlite
 
@@ -1210,6 +1212,19 @@ def translate_oracle_to_char(sql: str) -> str:
     return oracle_to_sqlite.translate_oracle_to_char(sql)
 
 
+def _server_timezone_offset_minutes() -> int:
+    """Return offset minutes for configured Django TIME_ZONE at current time."""
+    tz_name = str(getattr(settings, 'TIME_ZONE', '') or 'UTC')
+    try:
+        tz = ZoneInfo(tz_name)
+        offset = timezone.now().astimezone(tz).utcoffset()
+    except Exception:
+        offset = timezone.now().astimezone().utcoffset()
+    if offset is None:
+        return 0
+    return int(offset.total_seconds() // 60)
+
+
 def ensure_oracle_dual(connection: sqlite3.Connection) -> None:
     """Provide Oracle-like DUAL compatibility in SQLite execution sessions."""
     connection.execute('CREATE TEMP VIEW IF NOT EXISTS dual AS SELECT 1 AS dummy')
@@ -1220,6 +1235,9 @@ def run_read_only_query(
     sql: str,
     timezone_offset_minutes: int | None = None,
 ) -> dict[str, object]:
+    if timezone_offset_minutes is None:
+        timezone_offset_minutes = _server_timezone_offset_minutes()
+
     statements = split_sql_statements(sql)
 
     if len(statements) == 1:
@@ -1261,6 +1279,9 @@ def run_read_only_query_across_databases(
     sql: str,
     timezone_offset_minutes: int | None = None,
 ) -> dict[str, object]:
+    if timezone_offset_minutes is None:
+        timezone_offset_minutes = _server_timezone_offset_minutes()
+
     statements = split_sql_statements(sql)
     validated_statements = [
         oracle_to_sqlite.translate_oracle_sql(
