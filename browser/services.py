@@ -15,6 +15,8 @@ from django.conf import settings
 from django.core.exceptions import SuspiciousOperation
 from django.utils.html import escape
 
+from . import oracle_to_sqlite
+
 SQLITE_SUFFIXES = {'.db', '.sqlite', '.sqlite3'}
 GZIP_SUFFIX = '.gz'
 SQLITE_MAGIC_HEADER = b'SQLite format 3\x00'
@@ -38,15 +40,6 @@ LEGACY_DEFAULT_LLM_ENDPOINTS = {
     'http://127.0.0.1:11434/v1',
     'http://localhost:11434/v1',
 }
-ORACLE_ROWNUM_PATTERN = re.compile(r'(?is)\s+(where|and)\s+rownum\s*(<|<=)\s*(\d+)\s*$')
-ORACLE_SYSDATE_FRACTION_PATTERN = re.compile(
-    r'(?i)\bsysdate\b\s*([+-])\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)'
-)
-ORACLE_SYSDATE_DAYS_PATTERN = re.compile(r'(?i)\bsysdate\b\s*([+-])\s*(\d+(?:\.\d+)?)')
-ORACLE_SYSDATE_WORD_PATTERN = re.compile(r'(?i)\bsysdate\b')
-ORACLE_TO_CHAR_PATTERN = re.compile(
-    r"(?is)\bto_char\s*\(\s*(?P<expr>.*?)\s*,\s*'(?P<fmt>[^']+)'\s*\)"
-)
 FENCED_SQL_PATTERN = re.compile(r'```(?:sql)?\s*(.*?)```', re.IGNORECASE | re.DOTALL)
 FENCED_JSON_PATTERN = re.compile(r'```(?:json)?\s*(\{.*?\})\s*```', re.IGNORECASE | re.DOTALL)
 AMBIGUOUS_ANSWER_MARKERS = (
@@ -1206,119 +1199,28 @@ def split_sql_statements(sql: str) -> list[str]:
 
 
 def translate_oracle_rownum(sql: str) -> str:
-    cleaned = sql.strip().rstrip(';')
-    match = ORACLE_ROWNUM_PATTERN.search(cleaned)
-    if not match:
-        return cleaned
-
-    comparison = match.group(2)
-    limit = int(match.group(3))
-    if comparison == '<':
-        limit -= 1
-    if limit < 0:
-        limit = 0
-
-    base_sql = cleaned[:match.start()].rstrip()
-    base_sql = re.sub(r'(?is)\s+(where|and)\s*$', '', base_sql).rstrip()
-    count_match = re.match(r'(?is)^select\s+count\(\*\)\s+from\s+(?P<source>.+)$', base_sql)
-    if count_match:
-        source = count_match.group('source').strip()
-        return f'SELECT COUNT(*) AS count FROM (SELECT * FROM {source} LIMIT {limit}) AS oracle_compat'
-
-    return f'SELECT * FROM ({base_sql}) AS oracle_compat LIMIT {limit}'
-
-
-def _format_decimal(value: float) -> str:
-    if value.is_integer():
-        return str(int(value))
-    return f'{value:.6f}'.rstrip('0').rstrip('.')
+    return oracle_to_sqlite.translate_oracle_rownum(sql)
 
 
 def translate_oracle_sysdate(sql: str) -> str:
-    """Translate Oracle-style SYSDATE expressions to SQLite DATETIME forms."""
-    translated = sql.strip()
-
-    def _replace_fraction(match: re.Match[str]) -> str:
-        sign = match.group(1)
-        numerator = float(match.group(2))
-        denominator = float(match.group(3))
-        if denominator == 0:
-            return match.group(0)
-        seconds = (numerator / denominator) * 86400.0
-        return f"DATETIME('now', '{sign}{_format_decimal(seconds)} seconds')"
-
-    translated = ORACLE_SYSDATE_FRACTION_PATTERN.sub(_replace_fraction, translated)
-
-    def _replace_days(match: re.Match[str]) -> str:
-        sign = match.group(1)
-        days = float(match.group(2))
-        return f"DATETIME('now', '{sign}{_format_decimal(days)} days')"
-
-    translated = ORACLE_SYSDATE_DAYS_PATTERN.sub(_replace_days, translated)
-    translated = ORACLE_SYSDATE_WORD_PATTERN.sub("DATETIME('now')", translated)
-    return translated
-
-
-def _oracle_to_char_format_to_sqlite(fmt: str) -> str:
-    normalized = fmt.strip()
-
-    # Common Oracle patterns explicitly requested by users.
-    upper_normalized = normalized.upper()
-    if upper_normalized == 'YYYY-MM-DD HH24:MI:SS':
-        return '%Y-%m-%d %H:%M:%S'
-    if upper_normalized == 'YYMMDD':
-        return '%y%m%d'
-
-    converted = normalized
-    # 긴 토큰부터 치환해 부분 치환 충돌을 피한다.
-    token_map = [
-        ('HH24', '%H'),
-        ('HH', '%H'),
-        ('YYYY', '%Y'),
-        ('YY', '%y'),
-        ('MM', '%m'),
-        ('DD', '%d'),
-        ('MI', '%M'),
-        ('SS', '%S'),
-    ]
-    for oracle_token, sqlite_token in token_map:
-        converted = re.sub(oracle_token, sqlite_token, converted, flags=re.IGNORECASE)
-    return converted
+    return oracle_to_sqlite.translate_oracle_sysdate(sql)
 
 
 def translate_oracle_to_char(sql: str) -> str:
-    """Translate Oracle TO_CHAR(datetime, format) to SQLite STRFTIME(format, datetime)."""
-
-    def _replace(match: re.Match[str]) -> str:
-        expr = match.group('expr').strip()
-        fmt = match.group('fmt').strip()
-        if not expr:
-            return match.group(0)
-        sqlite_fmt = _oracle_to_char_format_to_sqlite(fmt)
-        return f"STRFTIME('{sqlite_fmt}', {expr})"
-
-    return ORACLE_TO_CHAR_PATTERN.sub(_replace, sql)
+    return oracle_to_sqlite.translate_oracle_to_char(sql)
 
 
 def run_read_only_query(database_path: Path, sql: str) -> dict[str, object]:
     statements = split_sql_statements(sql)
 
     if len(statements) == 1:
-        validated_sql = translate_oracle_sysdate(
-            translate_oracle_to_char(
-                translate_oracle_rownum(validate_read_only_sql(statements[0]))
-            )
-        )
+        validated_sql = oracle_to_sqlite.translate_oracle_sql(validate_read_only_sql(statements[0]))
         with connect_database(database_path) as connection:
             cursor = connection.execute(validated_sql)
             return serialize_rows(cursor)
 
     validated_statements = [
-        translate_oracle_sysdate(
-            translate_oracle_to_char(
-                translate_oracle_rownum(validate_read_only_sql(statement))
-            )
-        )
+        oracle_to_sqlite.translate_oracle_sql(validate_read_only_sql(statement))
         for statement in statements
     ]
 
@@ -1387,101 +1289,6 @@ def run_read_only_query_across_databases(context: dict[str, object], sql: str) -
 
         if len(validated_statements) == 1:
             cursor = connection.execute(validated_statements[0])
-            return serialize_rows(cursor)
-
-        results: list[dict[str, object]] = []
-        for index, statement in enumerate(validated_statements, start=1):
-            cursor = connection.execute(statement)
-            payload = serialize_rows(cursor)
-            payload['statement_index'] = index
-            payload['statement_sql'] = statement
-            results.append(payload)
-
-        return {
-            'results': results,
-            'result_count': len(results),
-        }
-
-
-def extract_sql_from_text(text: str) -> str:
-    cleaned = text.strip()
-    json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
-    if json_match:
-        try:
-            payload = json.loads(json_match.group(0))
-            sql_value = str(payload.get('sql', '')).strip()
-            if sql_value:
-                return sql_value
-        except json.JSONDecodeError:
-            pass
-
-    fenced_match = FENCED_SQL_PATTERN.search(cleaned)
-    if fenced_match:
-        return fenced_match.group(1).strip()
-
-    return ''
-
-
-def parse_llm_content(content: str) -> tuple[str, str]:
-    cleaned = content.strip()
-    if not cleaned:
-        return '', ''
-
-    # 1) Try fenced JSON first.
-    fenced_match = FENCED_JSON_PATTERN.search(cleaned)
-    if fenced_match:
-        try:
-            payload = json.loads(fenced_match.group(1))
-            answer = str(payload.get('answer', '')).strip()
-            sql = str(payload.get('sql', '')).strip()
-            return answer, sql
-        except json.JSONDecodeError:
-            pass
-
-    # 2) Try bare JSON object.
-    json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
-    if json_match:
-        try:
-            payload = json.loads(json_match.group(0))
-            answer = str(payload.get('answer', '')).strip()
-            sql = str(payload.get('sql', '')).strip()
-            if answer or sql:
-                return answer, sql
-        except json.JSONDecodeError:
-            pass
-
-    # 3) Fallback: treat content as answer and extract SQL heuristically.
-    return cleaned, extract_sql_from_text(cleaned)
-
-
-def build_clarification_options(
-    question: str,
-    context: dict[str, object],
-    answer: str,
-    suggested_sql: str,
-) -> list[dict[str, str]]:
-    if suggested_sql.strip():
-        return []
-
-    answer_text = answer.strip()
-    if not answer_text:
-        return []
-
-    is_ambiguous = any(marker in answer_text for marker in AMBIGUOUS_ANSWER_MARKERS)
-    if not is_ambiguous:
-        return []
-
-    mode = str(context.get('mode', '')).strip().lower()
-    if mode != 'folder':
-        return []
-
-    base_question = question.strip()
-    if not base_question:
-        return []
-
-    # 이미 사용자가 기준을 선택해 재질문한 경우, 선택지 루프를 막는다.
-    if any(marker in base_question for marker in CLARIFICATION_SELECTED_MARKERS):
-        return []
 
     choice_specs = [
         (

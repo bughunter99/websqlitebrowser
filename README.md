@@ -780,6 +780,17 @@ sales.db에 있는 테이블이야.
 기능이 됐는데, 이걸 일반적으로 만들어서 다른데서도 쓸 수 있게 oracle_to_sqlite.py 파일을 만들어줘. 이 파일을 다른데서도 똑같이 쓰게끔. 
 
 
+테이블 선택하면 다음처럼 두개가 나오는데,
+첫번째 나오는건 안나오게 해줘.
+SELECT name FROM customers;
+SELECT id, name, city, joined_at
+FROM customers;
+
+
+
+oracle_to_sqlite.py 파일이 어디 있어?
+이 프로그램도 컨버전할때, 이걸 쓰게 해줘.
+
 
 
 

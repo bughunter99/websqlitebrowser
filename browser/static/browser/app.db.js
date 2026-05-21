@@ -46,7 +46,6 @@ async function openDatabase(path) {
                     ? firstTableColumns.join(', ')
                     : '*';
                 sqlEditor.value = [
-                    `SELECT name FROM ${firstTableName};`,
                     `SELECT ${columnsSql}`,
                     `FROM ${firstTableName};`,
                 ].join('\n');

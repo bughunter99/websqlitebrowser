@@ -11,7 +11,7 @@ from unittest import mock
 from django.core.exceptions import SuspiciousOperation
 from django.test import TestCase, override_settings
 
-from browser import services
+from browser import oracle_to_sqlite, services
 
 
 class BrowserApiTests(TestCase):
@@ -315,6 +315,15 @@ class OracleDateFunctionTranslationTests(TestCase):
         self.assertIn("STRFTIME('%Y%m%d %H%M%S'", translated)
         self.assertIn("DATETIME('now', '-1 days')", translated)
 
+    class OracleToSqliteModuleTests(TestCase):
+        """독립 모듈 oracle_to_sqlite 재사용성 검증"""
+
+        def test_translate_oracle_sql_pipeline(self):
+            sql = "SELECT to_char(sysdate - 1, 'YYYYMMDD HH24MISS') aa FROM invoices WHERE rownum <= 1"
+            translated = oracle_to_sqlite.translate_oracle_sql(sql)
+            self.assertIn("STRFTIME('%Y%m%d %H%M%S'", translated)
+            self.assertIn("DATETIME('now', '-1 days')", translated)
+            self.assertIn('LIMIT 1', translated)
 
 class ValidateReadOnlySqlTests(TestCase):
     """validate_read_only_sql() – 허용/거부 정책"""
