@@ -1511,6 +1511,59 @@ def _extract_text_from_llm_response(payload: object) -> str:
     return ''
 
 
+def parse_llm_content(content: str) -> tuple[str, str]:
+    """
+    LLM 응답 문자열에서 answer/sql을 추출한다.
+    우선순위:
+    1) JSON 객체(answer/sql)
+    2) ```sql fenced block
+    3) 평문 전체를 answer로 사용
+    """
+    text = str(content or '').strip()
+    if not text:
+        return '', ''
+
+    def _from_object(obj: object) -> tuple[str, str] | None:
+        if not isinstance(obj, dict):
+            return None
+        answer = str(obj.get('answer', '') or '').strip()
+        sql = str(obj.get('sql', '') or '').strip()
+        if answer or sql:
+            return answer, sql
+        return None
+
+    # 1) fenced JSON
+    fenced_json_match = FENCED_JSON_PATTERN.search(text)
+    if fenced_json_match:
+        candidate = fenced_json_match.group(1).strip()
+        try:
+            parsed = json.loads(candidate)
+            extracted = _from_object(parsed)
+            if extracted:
+                return extracted
+        except json.JSONDecodeError:
+            pass
+
+    # 2) raw JSON
+    if text.startswith('{') and text.endswith('}'):
+        try:
+            parsed = json.loads(text)
+            extracted = _from_object(parsed)
+            if extracted:
+                return extracted
+        except json.JSONDecodeError:
+            pass
+
+    # 3) fenced SQL
+    fenced_sql_match = FENCED_SQL_PATTERN.search(text)
+    if fenced_sql_match:
+        sql = fenced_sql_match.group(1).strip()
+        return text, sql
+
+    # 4) fallback
+    return text, ''
+
+
 def call_llm(
     settings_data: dict[str, str],
     question: str,
