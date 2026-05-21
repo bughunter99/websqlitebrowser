@@ -44,6 +44,9 @@ ORACLE_SYSDATE_FRACTION_PATTERN = re.compile(
 )
 ORACLE_SYSDATE_DAYS_PATTERN = re.compile(r'(?i)\bsysdate\b\s*([+-])\s*(\d+(?:\.\d+)?)')
 ORACLE_SYSDATE_WORD_PATTERN = re.compile(r'(?i)\bsysdate\b')
+ORACLE_TO_CHAR_PATTERN = re.compile(
+    r"(?is)\bto_char\s*\(\s*(?P<expr>.*?)\s*,\s*'(?P<fmt>[^']+)'\s*\)"
+)
 FENCED_SQL_PATTERN = re.compile(r'```(?:sql)?\s*(.*?)```', re.IGNORECASE | re.DOTALL)
 FENCED_JSON_PATTERN = re.compile(r'```(?:json)?\s*(\{.*?\})\s*```', re.IGNORECASE | re.DOTALL)
 AMBIGUOUS_ANSWER_MARKERS = (
@@ -1256,20 +1259,65 @@ def translate_oracle_sysdate(sql: str) -> str:
     return translated
 
 
+def _oracle_to_char_format_to_sqlite(fmt: str) -> str:
+    normalized = fmt.strip()
+
+    # Common Oracle patterns explicitly requested by users.
+    upper_normalized = normalized.upper()
+    if upper_normalized == 'YYYY-MM-DD HH24:MI:SS':
+        return '%Y-%m-%d %H:%M:%S'
+    if upper_normalized == 'YYMMDD':
+        return '%y%m%d'
+
+    converted = normalized
+    # 긴 토큰부터 치환해 부분 치환 충돌을 피한다.
+    token_map = [
+        ('HH24', '%H'),
+        ('HH', '%H'),
+        ('YYYY', '%Y'),
+        ('YY', '%y'),
+        ('MM', '%m'),
+        ('DD', '%d'),
+        ('MI', '%M'),
+        ('SS', '%S'),
+    ]
+    for oracle_token, sqlite_token in token_map:
+        converted = re.sub(oracle_token, sqlite_token, converted, flags=re.IGNORECASE)
+    return converted
+
+
+def translate_oracle_to_char(sql: str) -> str:
+    """Translate Oracle TO_CHAR(datetime, format) to SQLite STRFTIME(format, datetime)."""
+
+    def _replace(match: re.Match[str]) -> str:
+        expr = match.group('expr').strip()
+        fmt = match.group('fmt').strip()
+        if not expr:
+            return match.group(0)
+        sqlite_fmt = _oracle_to_char_format_to_sqlite(fmt)
+        return f"STRFTIME('{sqlite_fmt}', {expr})"
+
+    return ORACLE_TO_CHAR_PATTERN.sub(_replace, sql)
+
+
 def run_read_only_query(database_path: Path, sql: str) -> dict[str, object]:
     statements = split_sql_statements(sql)
 
     if len(statements) == 1:
-        validated_sql = translate_oracle_sysdate(
-            translate_oracle_rownum(validate_read_only_sql(statements[0]))
+        validated_sql = translate_oracle_to_char(
+            translate_oracle_sysdate(
+                translate_oracle_rownum(validate_read_only_sql(statements[0]))
+            )
         )
         with connect_database(database_path) as connection:
             cursor = connection.execute(validated_sql)
             return serialize_rows(cursor)
 
     validated_statements = [
-        translate_oracle_sysdate(
-            translate_oracle_rownum(validate_read_only_sql(statement))
+        translate_oracle_to_char(
+            translate_oracle_sysdate(
+                translate_oracle_rownum(validate_read_only_sql(statement))
+            )
         )
         for statement in statements
     ]
@@ -1292,8 +1340,10 @@ def run_read_only_query(database_path: Path, sql: str) -> dict[str, object]:
 def run_read_only_query_across_databases(context: dict[str, object], sql: str) -> dict[str, object]:
     statements = split_sql_statements(sql)
     validated_statements = [
-        translate_oracle_sysdate(
-            translate_oracle_rownum(validate_read_only_sql(statement))
+        translate_oracle_to_char(
+            translate_oracle_sysdate(
+                translate_oracle_rownum(validate_read_only_sql(statement))
+            )
         )
         for statement in statements
     ]

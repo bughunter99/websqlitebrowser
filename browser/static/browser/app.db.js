@@ -27,6 +27,19 @@ async function openDatabase(path) {
 
         initQueryPane();
 
+        const sqlEditor = document.getElementById('sql-editor');
+        if (sqlEditor instanceof HTMLTextAreaElement) {
+            const firstTableName = Array.isArray(data.database.tables) && data.database.tables.length
+                ? String(data.database.tables[0].name || '').trim()
+                : '';
+            if (firstTableName) {
+                sqlEditor.value = `SELECT name FROM ${firstTableName};`;
+            } else {
+                sqlEditor.value = '';
+            }
+            sqlEditor.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
         activateTab('query');
     } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);

@@ -7,6 +7,21 @@
     <title>websqlitebrowser</title>
     <script>
         (function () {
+            // Edge 구버전 호환: replaceAll 미지원 환경 폴리필
+            if (!String.prototype.replaceAll) {
+                // eslint-disable-next-line no-extend-native
+                String.prototype.replaceAll = function (search, replacement) {
+                    const source = String(this);
+                    if (search instanceof RegExp) {
+                        if (!search.global) {
+                            throw new TypeError('replaceAll regex must have global flag');
+                        }
+                        return source.replace(search, replacement);
+                    }
+                    return source.split(String(search)).join(String(replacement));
+                };
+            }
+
             const userAgent = navigator.userAgent || '';
             const isMobile = /Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)
                 || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches && window.innerWidth < 900);
@@ -169,8 +184,8 @@
     <script src="{% static 'browser/app.tabs.js' %}?v=20260516-1"></script>
     <script src="{% static 'browser/app.table.view.js' %}?v=20260516-1"></script>
     <script src="{% static 'browser/app.table.controller.js' %}?v=20260516-1"></script>
-    <script src="{% static 'browser/app.db.view.js' %}?v=20260516-1"></script>
-    <script src="{% static 'browser/app.db.js' %}?v=20260516-1"></script>
+    <script src="{% static 'browser/app.db.view.js' %}?v=20260521-1"></script>
+    <script src="{% static 'browser/app.db.js' %}?v=20260521-1"></script>
     <script src="{% static 'browser/app.query.controller.js' %}?v=20260516-1"></script>
     <script src="{% static 'browser/app.query.view.js' %}?v=20260516-1"></script>
     <script src="{% static 'browser/app.query.js' %}?v=20260520-2"></script>

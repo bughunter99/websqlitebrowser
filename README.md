@@ -729,6 +729,7 @@ settings.py의 69번째 줄에서 VERSION is not defined 라고 에러나는데?
 여기 sample db 만들어준거에 time 컬럼을 하나 추가해줘. invoices.db에 하나 추가해줘. 그걸로 sysdate 내가 테스트해볼께.
 
 
+
 아까 얘기한 주석 파싱이 다 안된거 같아. 다음으로 하면 앞에 쿼리만 실행되.
 --test는 주석이니까 아래를 전체 실행하면 두개 결과가 나와야 해.
 
@@ -739,6 +740,27 @@ where rownum < 3;
 --test
 select *
 from invoices;
+
+
+모바일 edge에서는 에러 안나는데 윈도우 edge에서는 나.
+DIR ERROR String(...).replaceAll is not a fuction 이라고.
+
+
+처음에 sql 파일을 선택하면 무조건 다음처럼 나오는데,
+SELECT name FROM sqlite_master WHERE type = 'table';
+그러지말고, 여기 처음 있는 테이블로 그냥
+SELECT name FROM $tablename 까지만 나오게 해줘.
+
+
+그리고 sales.db 를 선택하고
+SELECT to_char(max(time), 'YYYYMMDD HH24MISS') aa
+FROM invoices;
+다음 실행하면 no such function: to_char 라고 에러나는데,
+쓸 수 있게 해줄 수 있어?
+
+
+
+
 
 
 

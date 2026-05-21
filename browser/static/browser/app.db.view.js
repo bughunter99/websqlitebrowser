@@ -75,7 +75,7 @@ function buildQueryTabContent() {
                 <label class="section-label" for="sql-editor">SQL</label>
                 <div class="sql-editor-shell" id="sql-editor-shell">
                     <pre id="sql-highlight" aria-hidden="true"></pre>
-                    <textarea id="sql-editor" spellcheck="false">SELECT name FROM sqlite_master WHERE type = 'table';</textarea>
+                    <textarea id="sql-editor" spellcheck="false"></textarea>
                 </div>
             </div>
             <div class="query-splitter" id="query-splitter" role="separator" aria-orientation="horizontal" title="드래그해서 높이 조정"></div>
