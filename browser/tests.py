@@ -306,6 +306,16 @@ class TranslateOracleRownumTests(TestCase):
         self.assertIn('LIMIT 3', result)
 
 
+class OracleDateFunctionTranslationTests(TestCase):
+    """Oracle SYSDATE/TO_CHAR 조합 변환"""
+
+    def test_to_char_with_sysdate_minus_days(self):
+        sql = "SELECT to_char(sysdate - 1, 'YYYYMMDD HH24MISS') aa FROM invoices"
+        translated = services.translate_oracle_sysdate(services.translate_oracle_to_char(sql))
+        self.assertIn("STRFTIME('%Y%m%d %H%M%S'", translated)
+        self.assertIn("DATETIME('now', '-1 days')", translated)
+
+
 class ValidateReadOnlySqlTests(TestCase):
     """validate_read_only_sql() – 허용/거부 정책"""
 

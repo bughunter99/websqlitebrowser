@@ -759,6 +759,25 @@ FROM invoices;
 쓸 수 있게 해줄 수 있어?
 
 
+처음에 sql 파일을 선택하면 무조건 다음처럼 나오는데,
+SELECT name FROM $tablename 
+SELECT $모든 컬럼, 로 구분해서 FROM $tablename 으로 나오게 해줘.
+
+아니 여기 컬럼이 A, B, C가 있으면
+select A, B, C
+from $tablename
+이렇게 나오게 해달라고.
+
+
+다음 실행하면 aa 값이 모두 null로 나오는데, 이거 오라클처럼 동작하게 해줘.
+SELECT to_char(sysdate - 1, 'YYYYMMDD HH24MISS') aa, ii.*
+FROM invoices ii;
+
+sales.db에 있는 테이블이야.
+
+
+내가 sqlite를 쿼리할때, oracle 쿼리로 되게끔 해달라고 요청해서 몇개
+기능이 됐는데, 이걸 일반적으로 만들어서 다른데서도 쓸 수 있게 oracle_to_sqlite.py 파일을 만들어줘. 이 파일을 다른데서도 똑같이 쓰게끔. 
 
 
 

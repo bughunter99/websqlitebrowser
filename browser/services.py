@@ -1304,8 +1304,8 @@ def run_read_only_query(database_path: Path, sql: str) -> dict[str, object]:
     statements = split_sql_statements(sql)
 
     if len(statements) == 1:
-        validated_sql = translate_oracle_to_char(
-            translate_oracle_sysdate(
+        validated_sql = translate_oracle_sysdate(
+            translate_oracle_to_char(
                 translate_oracle_rownum(validate_read_only_sql(statements[0]))
             )
         )
@@ -1314,8 +1314,8 @@ def run_read_only_query(database_path: Path, sql: str) -> dict[str, object]:
             return serialize_rows(cursor)
 
     validated_statements = [
-        translate_oracle_to_char(
-            translate_oracle_sysdate(
+        translate_oracle_sysdate(
+            translate_oracle_to_char(
                 translate_oracle_rownum(validate_read_only_sql(statement))
             )
         )

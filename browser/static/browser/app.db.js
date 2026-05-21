@@ -29,11 +29,27 @@ async function openDatabase(path) {
 
         const sqlEditor = document.getElementById('sql-editor');
         if (sqlEditor instanceof HTMLTextAreaElement) {
-            const firstTableName = Array.isArray(data.database.tables) && data.database.tables.length
-                ? String(data.database.tables[0].name || '').trim()
+            const firstTable = Array.isArray(data.database.tables) && data.database.tables.length
+                ? data.database.tables[0]
+                : null;
+            const firstTableName = firstTable && typeof firstTable.name === 'string'
+                ? String(firstTable.name || '').trim()
                 : '';
+
             if (firstTableName) {
-                sqlEditor.value = `SELECT name FROM ${firstTableName};`;
+                const firstTableColumns = Array.isArray(firstTable?.columns)
+                    ? firstTable.columns
+                        .map((column) => (column && typeof column.name === 'string' ? column.name.trim() : ''))
+                        .filter(Boolean)
+                    : [];
+                const columnsSql = firstTableColumns.length
+                    ? firstTableColumns.join(', ')
+                    : '*';
+                sqlEditor.value = [
+                    `SELECT name FROM ${firstTableName};`,
+                    `SELECT ${columnsSql}`,
+                    `FROM ${firstTableName};`,
+                ].join('\n');
             } else {
                 sqlEditor.value = '';
             }
