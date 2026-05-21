@@ -8,7 +8,7 @@ import hashlib
 import tempfile
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta, timezone as datetime_timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -1225,6 +1225,12 @@ def _server_timezone_offset_minutes() -> int:
     return int(offset.total_seconds() // 60)
 
 
+def _python_now_for_query(timezone_offset_minutes: int | None) -> datetime:
+    if timezone_offset_minutes is None:
+        return datetime.now()
+    return (datetime.now(datetime_timezone.utc) - timedelta(minutes=int(timezone_offset_minutes))).replace(tzinfo=None)
+
+
 def ensure_oracle_dual(connection: sqlite3.Connection) -> None:
     """Provide Oracle-like DUAL compatibility in SQLite execution sessions."""
     connection.execute('CREATE TEMP VIEW IF NOT EXISTS dual AS SELECT 1 AS dummy')
@@ -1237,6 +1243,7 @@ def run_read_only_query(
 ) -> dict[str, object]:
     if timezone_offset_minutes is None:
         timezone_offset_minutes = _server_timezone_offset_minutes()
+    python_now = _python_now_for_query(timezone_offset_minutes)
 
     statements = split_sql_statements(sql)
 
@@ -1244,6 +1251,7 @@ def run_read_only_query(
         validated_sql = oracle_to_sqlite.translate_oracle_sql(
             validate_read_only_sql(statements[0]),
             timezone_offset_minutes=timezone_offset_minutes,
+            python_now=python_now,
         )
         with connect_database(database_path) as connection:
             ensure_oracle_dual(connection)
@@ -1254,6 +1262,7 @@ def run_read_only_query(
         oracle_to_sqlite.translate_oracle_sql(
             validate_read_only_sql(statement),
             timezone_offset_minutes=timezone_offset_minutes,
+            python_now=python_now,
         )
         for statement in statements
     ]
@@ -1281,12 +1290,14 @@ def run_read_only_query_across_databases(
 ) -> dict[str, object]:
     if timezone_offset_minutes is None:
         timezone_offset_minutes = _server_timezone_offset_minutes()
+    python_now = _python_now_for_query(timezone_offset_minutes)
 
     statements = split_sql_statements(sql)
     validated_statements = [
         oracle_to_sqlite.translate_oracle_sql(
             validate_read_only_sql(statement),
             timezone_offset_minutes=timezone_offset_minutes,
+            python_now=python_now,
         )
         for statement in statements
     ]

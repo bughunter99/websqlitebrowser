@@ -5,6 +5,7 @@ import shutil
 import sqlite3
 import tempfile
 import gzip
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -327,22 +328,29 @@ class OracleDateFunctionTranslationTests(TestCase):
         sql = "SELECT to_char(sysdate - 1, 'YYYYMMDD HH24MISS') aa FROM invoices"
         translated = services.translate_oracle_sysdate(services.translate_oracle_to_char(sql))
         self.assertIn("STRFTIME('%Y%m%d %H%M%S'", translated)
-        self.assertIn("DATETIME('now', 'localtime', '-1 days')", translated)
+        self.assertRegex(translated, r"DATETIME\('\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', '-1 days'\)")
 
     class OracleToSqliteModuleTests(TestCase):
         """독립 모듈 oracle_to_sqlite 재사용성 검증"""
 
         def test_translate_oracle_sql_pipeline(self):
             sql = "SELECT to_char(sysdate - 1, 'YYYYMMDD HH24MISS') aa FROM invoices WHERE rownum <= 1"
-            translated = oracle_to_sqlite.translate_oracle_sql(sql)
+            translated = oracle_to_sqlite.translate_oracle_sql(
+                sql,
+                python_now=datetime(2026, 5, 21, 12, 34, 56),
+            )
             self.assertIn("STRFTIME('%Y%m%d %H%M%S'", translated)
-            self.assertIn("DATETIME('now', 'localtime', '-1 days')", translated)
+            self.assertIn("DATETIME('2026-05-21 12:34:56', '-1 days')", translated)
             self.assertIn('LIMIT 1', translated)
 
         def test_translate_oracle_sql_with_browser_timezone_offset(self):
             sql = "SELECT sysdate FROM dual"
-            translated = oracle_to_sqlite.translate_oracle_sql(sql, timezone_offset_minutes=-540)
-            self.assertIn("DATETIME('now', '+540 minutes')", translated)
+            translated = oracle_to_sqlite.translate_oracle_sql(
+                sql,
+                timezone_offset_minutes=-540,
+                python_now=datetime(2026, 5, 21, 9, 0, 0),
+            )
+            self.assertIn("DATETIME('2026-05-21 09:00:00')", translated)
 
 class ValidateReadOnlySqlTests(TestCase):
     """validate_read_only_sql() – 허용/거부 정책"""

@@ -6,6 +6,7 @@ other Python projects without Django dependencies.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import re
 
 ORACLE_ROWNUM_PATTERN = re.compile(r'(?is)\s+(where|and)\s+rownum\s*(<|<=)\s*(\d+)\s*$')
@@ -48,21 +49,42 @@ def _format_decimal(value: float) -> str:
     return f'{value:.6f}'.rstrip('0').rstrip('.')
 
 
-def _build_now_expression(timezone_offset_minutes: int | None, extra_modifier: str | None = None) -> str:
-    modifiers: list[str] = []
+def _escape_sql_literal(value: str) -> str:
+    return value.replace("'", "''")
+
+
+def _resolve_python_now(
+    timezone_offset_minutes: int | None,
+    python_now: datetime | None,
+) -> datetime:
+    if python_now is not None:
+        return python_now
+
     if timezone_offset_minutes is None:
-        modifiers.append('localtime')
-    else:
-        local_offset_minutes = -int(timezone_offset_minutes)
-        modifiers.append(f'{local_offset_minutes:+d} minutes')
+        return datetime.now()
+
+    base_utc = datetime.now(timezone.utc)
+    return (base_utc - timedelta(minutes=int(timezone_offset_minutes))).replace(tzinfo=None)
+
+
+def _build_python_now_expression(
+    timezone_offset_minutes: int | None,
+    python_now: datetime | None,
+    extra_modifier: str | None = None,
+) -> str:
+    now_dt = _resolve_python_now(timezone_offset_minutes, python_now)
+    now_text = _escape_sql_literal(now_dt.strftime('%Y-%m-%d %H:%M:%S'))
     if extra_modifier:
-        modifiers.append(extra_modifier)
-    quoted_modifiers = ', '.join(f"'{modifier}'" for modifier in modifiers)
-    return f"DATETIME('now', {quoted_modifiers})"
+        return f"DATETIME('{now_text}', '{extra_modifier}')"
+    return f"DATETIME('{now_text}')"
 
 
-def translate_oracle_sysdate(sql: str, timezone_offset_minutes: int | None = None) -> str:
-    """Translate Oracle-style SYSDATE expressions to SQLite DATETIME forms."""
+def translate_oracle_sysdate(
+    sql: str,
+    timezone_offset_minutes: int | None = None,
+    python_now: datetime | None = None,
+) -> str:
+    """Translate Oracle-style SYSDATE expressions using Python current time."""
     translated = sql.strip()
 
     def _replace_fraction(match: re.Match[str]) -> str:
@@ -72,17 +94,28 @@ def translate_oracle_sysdate(sql: str, timezone_offset_minutes: int | None = Non
         if denominator == 0:
             return match.group(0)
         seconds = (numerator / denominator) * 86400.0
-        return _build_now_expression(timezone_offset_minutes, f"{sign}{_format_decimal(seconds)} seconds")
+        return _build_python_now_expression(
+            timezone_offset_minutes,
+            python_now,
+            f"{sign}{_format_decimal(seconds)} seconds",
+        )
 
     translated = ORACLE_SYSDATE_FRACTION_PATTERN.sub(_replace_fraction, translated)
 
     def _replace_days(match: re.Match[str]) -> str:
         sign = match.group(1)
         days = float(match.group(2))
-        return _build_now_expression(timezone_offset_minutes, f"{sign}{_format_decimal(days)} days")
+        return _build_python_now_expression(
+            timezone_offset_minutes,
+            python_now,
+            f"{sign}{_format_decimal(days)} days",
+        )
 
     translated = ORACLE_SYSDATE_DAYS_PATTERN.sub(_replace_days, translated)
-    translated = ORACLE_SYSDATE_WORD_PATTERN.sub(_build_now_expression(timezone_offset_minutes), translated)
+    translated = ORACLE_SYSDATE_WORD_PATTERN.sub(
+        _build_python_now_expression(timezone_offset_minutes, python_now),
+        translated,
+    )
     return translated
 
 
@@ -125,11 +158,16 @@ def translate_oracle_to_char(sql: str) -> str:
     return ORACLE_TO_CHAR_PATTERN.sub(_replace, sql)
 
 
-def translate_oracle_sql(sql: str, timezone_offset_minutes: int | None = None) -> str:
+def translate_oracle_sql(
+    sql: str,
+    timezone_offset_minutes: int | None = None,
+    python_now: datetime | None = None,
+) -> str:
     """Apply Oracle compatibility transforms in a safe order for SQLite execution."""
     return translate_oracle_sysdate(
         translate_oracle_to_char(translate_oracle_rownum(sql)),
         timezone_offset_minutes=timezone_offset_minutes,
+        python_now=python_now,
     )
 
 
