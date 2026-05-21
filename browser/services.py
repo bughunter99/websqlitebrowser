@@ -39,6 +39,11 @@ LEGACY_DEFAULT_LLM_ENDPOINTS = {
     'http://localhost:11434/v1',
 }
 ORACLE_ROWNUM_PATTERN = re.compile(r'(?is)\s+(where|and)\s+rownum\s*(<|<=)\s*(\d+)\s*$')
+ORACLE_SYSDATE_FRACTION_PATTERN = re.compile(
+    r'(?i)\bsysdate\b\s*([+-])\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)'
+)
+ORACLE_SYSDATE_DAYS_PATTERN = re.compile(r'(?i)\bsysdate\b\s*([+-])\s*(\d+(?:\.\d+)?)')
+ORACLE_SYSDATE_WORD_PATTERN = re.compile(r'(?i)\bsysdate\b')
 FENCED_SQL_PATTERN = re.compile(r'```(?:sql)?\s*(.*?)```', re.IGNORECASE | re.DOTALL)
 FENCED_JSON_PATTERN = re.compile(r'```(?:json)?\s*(\{.*?\})\s*```', re.IGNORECASE | re.DOTALL)
 AMBIGUOUS_ANSWER_MARKERS = (
@@ -1220,17 +1225,52 @@ def translate_oracle_rownum(sql: str) -> str:
     return f'SELECT * FROM ({base_sql}) AS oracle_compat LIMIT {limit}'
 
 
+def _format_decimal(value: float) -> str:
+    if value.is_integer():
+        return str(int(value))
+    return f'{value:.6f}'.rstrip('0').rstrip('.')
+
+
+def translate_oracle_sysdate(sql: str) -> str:
+    """Translate Oracle-style SYSDATE expressions to SQLite DATETIME forms."""
+    translated = sql.strip()
+
+    def _replace_fraction(match: re.Match[str]) -> str:
+        sign = match.group(1)
+        numerator = float(match.group(2))
+        denominator = float(match.group(3))
+        if denominator == 0:
+            return match.group(0)
+        seconds = (numerator / denominator) * 86400.0
+        return f"DATETIME('now', '{sign}{_format_decimal(seconds)} seconds')"
+
+    translated = ORACLE_SYSDATE_FRACTION_PATTERN.sub(_replace_fraction, translated)
+
+    def _replace_days(match: re.Match[str]) -> str:
+        sign = match.group(1)
+        days = float(match.group(2))
+        return f"DATETIME('now', '{sign}{_format_decimal(days)} days')"
+
+    translated = ORACLE_SYSDATE_DAYS_PATTERN.sub(_replace_days, translated)
+    translated = ORACLE_SYSDATE_WORD_PATTERN.sub("DATETIME('now')", translated)
+    return translated
+
+
 def run_read_only_query(database_path: Path, sql: str) -> dict[str, object]:
     statements = split_sql_statements(sql)
 
     if len(statements) == 1:
-        validated_sql = translate_oracle_rownum(validate_read_only_sql(statements[0]))
+        validated_sql = translate_oracle_sysdate(
+            translate_oracle_rownum(validate_read_only_sql(statements[0]))
+        )
         with connect_database(database_path) as connection:
             cursor = connection.execute(validated_sql)
             return serialize_rows(cursor)
 
     validated_statements = [
-        translate_oracle_rownum(validate_read_only_sql(statement))
+        translate_oracle_sysdate(
+            translate_oracle_rownum(validate_read_only_sql(statement))
+        )
         for statement in statements
     ]
 
@@ -1252,7 +1292,9 @@ def run_read_only_query(database_path: Path, sql: str) -> dict[str, object]:
 def run_read_only_query_across_databases(context: dict[str, object], sql: str) -> dict[str, object]:
     statements = split_sql_statements(sql)
     validated_statements = [
-        translate_oracle_rownum(validate_read_only_sql(statement))
+        translate_oracle_sysdate(
+            translate_oracle_rownum(validate_read_only_sql(statement))
+        )
         for statement in statements
     ]
 

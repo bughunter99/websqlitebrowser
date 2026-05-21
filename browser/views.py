@@ -211,9 +211,6 @@ def run_query(request: HttpRequest) -> JsonResponse:
 		if not is_sqlite_file(database_path):
 			raise SuspiciousOperation('Selected file is not a SQLite database.')
 
-		# SYSDATE 변환 로직 추가
-		sql = sql.replace('SYSDATE', "DATETIME('now')")
-
 		result = run_read_only_query(database_path, sql)
 
 		return JsonResponse(result)
