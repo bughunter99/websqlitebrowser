@@ -102,7 +102,7 @@ async function runQuery() {
             // 캐시에서 결과 확인 (SELECT 문인 경우만)
             let data;
             let wasCached = false;
-            const isCacheable = /^SELECT\s+/i.test(sql.trim());
+            const isCacheable = queryResultCache.shouldCache(sql);
             if (isCacheable) {
                 const cachedResult = queryResultCache.get(sql, databasePath);
                 if (cachedResult) {
@@ -119,7 +119,10 @@ async function runQuery() {
                     queryResultCache.set(sql, databasePath, data);
                 }
             } else {
-                // 쓰기 쿼리는 캐시하지 않음
+                // 쓰기/시간의존 쿼리는 캐시하지 않음
+                if (/^SELECT\s+/i.test(sql.trim()) && queryResultCache.isVolatileQuery(sql)) {
+                    outputLog(`QUERY CACHE BYPASS request=${requestId} reason=volatile_sql`, 'info');
+                }
                 data = /** @type {QueryResponse} */ (await requestJson('/api/query/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

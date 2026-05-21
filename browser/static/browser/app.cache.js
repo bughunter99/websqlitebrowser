@@ -31,6 +31,27 @@ class QueryResultCache {
     }
 
     /**
+     * 시간/난수 등 실행 시점마다 결과가 바뀌는 SQL 패턴 검사
+     * @param {string} sql SQL 쿼리
+     * @returns {boolean}
+     */
+    isVolatileQuery(sql) {
+        const normalized = String(sql || '').trim().toUpperCase();
+        return /(\bSYSDATE\b|\bCURRENT_TIMESTAMP\b|\bCURRENT_DATE\b|\bCURRENT_TIME\b|\bRANDOM\s*\()/i.test(normalized)
+            || /\bDATETIME\s*\(\s*'NOW'|\bDATE\s*\(\s*'NOW'|\bTIME\s*\(\s*'NOW'|\bSTRFTIME\s*\(\s*'[^']*'\s*,\s*'NOW'/i.test(normalized);
+    }
+
+    /**
+     * 캐시 가능 여부 판단
+     * @param {string} sql SQL 쿼리
+     * @returns {boolean}
+     */
+    shouldCache(sql) {
+        const normalized = String(sql || '').trim();
+        return /^SELECT\s+/i.test(normalized) && !this.isVolatileQuery(normalized);
+    }
+
+    /**
      * 캐시에서 결과 조회
      * @param {string} sql SQL 쿼리
      * @param {string} dbPath 데이터베이스 경로

@@ -813,6 +813,16 @@ locale을 참고해서 sysdate가 나오게 해줘.
 여기 쿼리 변환하는 기능은 다 oracle_to_sqlite.py를 수정해서 하고 있는거지? 여기 반영된 로직으로 다른데서도 똑같이 쓸꺼라서 그래.
 
 
+select sysdate
+from dual;
+를 실행하면 output엔 다음처럼 나와서 시간을 잘 가져오는데,
+
+20260521 101737 QUERY SQL request=2 select sysdate from dual;
+20260521 101737 QUERY CACHE HIT request=2
+20260521 101737 QUERY END request=2 at=2026-05-21 10:17:37 elapsed=5ms rows=1
+
+결과 그리드에는 2026-05-20 16:17:30 로 잘못 나와.
+
 
 
 /////////
