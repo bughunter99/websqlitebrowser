@@ -102,9 +102,13 @@ async function runQuery() {
             // 캐시에서 결과 확인 (SELECT 문인 경우만)
             let data;
             let wasCached = false;
-            const isCacheable = queryResultCache.shouldCache(sql);
+            const hasShouldCache = queryResultCache && typeof queryResultCache.shouldCache === 'function';
+            const hasGet = queryResultCache && typeof queryResultCache.get === 'function';
+            const hasSet = queryResultCache && typeof queryResultCache.set === 'function';
+            const hasIsVolatile = queryResultCache && typeof queryResultCache.isVolatileQuery === 'function';
+            const isCacheable = hasShouldCache ? queryResultCache.shouldCache(sql) : /^SELECT\s+/i.test(String(sql || '').trim());
             if (isCacheable) {
-                const cachedResult = queryResultCache.get(sql, databasePath);
+                const cachedResult = hasGet ? queryResultCache.get(sql, databasePath) : null;
                 if (cachedResult) {
                     data = cachedResult;
                     wasCached = true;
@@ -116,11 +120,13 @@ async function runQuery() {
                         body: JSON.stringify({ path: databasePath, sql }),
                     }));
                     // 캐시에 저장
-                    queryResultCache.set(sql, databasePath, data);
+                    if (hasSet) {
+                        queryResultCache.set(sql, databasePath, data);
+                    }
                 }
             } else {
                 // 쓰기/시간의존 쿼리는 캐시하지 않음
-                if (/^SELECT\s+/i.test(sql.trim()) && queryResultCache.isVolatileQuery(sql)) {
+                if (/^SELECT\s+/i.test(sql.trim()) && hasIsVolatile && queryResultCache.isVolatileQuery(sql)) {
                     outputLog(`QUERY CACHE BYPASS request=${requestId} reason=volatile_sql`, 'info');
                 }
                 data = /** @type {QueryResponse} */ (await requestJson('/api/query/', {
@@ -174,12 +180,18 @@ async function runQuery() {
             setStatus('Query failed', errorMsg);
             
             // 에러 시 해당 쿼리의 캐시 제거
-            queryResultCache.cache.delete(queryResultCache.generateKey(sql, databasePath));
+            if (queryResultCache
+                && queryResultCache.cache
+                && typeof queryResultCache.generateKey === 'function') {
+                queryResultCache.cache.delete(queryResultCache.generateKey(sql, databasePath));
+            }
             outputLog(`QUERY ERROR request=${requestId} ${errorMsg} cache_removed=true`, 'error');
         } finally {
             setQueryPending(false);
             // 쓰기 쿼리인 경우 DB의 모든 캐시 초기화
-            queryResultCache.clearIfWriteQuery(sql, databasePath);
+            if (queryResultCache && typeof queryResultCache.clearIfWriteQuery === 'function') {
+                queryResultCache.clearIfWriteQuery(sql, databasePath);
+            }
         }
     } catch (outerError) {
         setQueryPending(false);

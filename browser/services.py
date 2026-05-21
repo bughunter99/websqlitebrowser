@@ -344,9 +344,26 @@ def save_settings(payload: dict[str, object]) -> dict[str, str]:
     resolve_repo_path(current_folder)
     resolve_repo_path(hist_folder)
 
+    incoming_token = str(payload.get('token', '')).strip()
+    # UI GET 응답은 토큰을 "***"로 마스킹한다. 사용자가 다른 설정만 저장할 때
+    # 기존 토큰을 덮어쓰지 않도록 파일에 저장된 암호문을 그대로 유지한다.
+    existing_encrypted_token = ''
+    if settings_path().exists():
+        try:
+            with settings_path().open('r', encoding='utf-8') as handle:
+                existing_raw = json.load(handle)
+                existing_encrypted_token = str(existing_raw.get('token', '')).strip()
+        except (OSError, json.JSONDecodeError):
+            existing_encrypted_token = ''
+
+    if incoming_token == '***':
+        token_to_store = existing_encrypted_token
+    else:
+        token_to_store = _encrypt_token(incoming_token)
+
     data = {
         'endpoint': endpoint,
-        'token': _encrypt_token(str(payload.get('token', '')).strip()),
+        'token': token_to_store,
         'model': model,
         'system_folder': system_folder,
         'current_folder': current_folder,
@@ -994,7 +1011,7 @@ def normalise_chat_endpoint(endpoint: str) -> str:
 
 def detect_llm_provider(endpoint: str) -> str:
     lower = endpoint.lower()
-    if 'api.anthropic.com' in lower or lower.endswith('/messages'):
+    if 'api.anthropic.com' in lower:
         return 'anthropic'
     return 'openai-compatible'
 
@@ -1534,7 +1551,14 @@ def call_llm(
         if token:
             if 'authorization' in additional_header_keys:
                 overridden_additional_headers.append('authorization')
+            if 'x-api-key' in additional_header_keys:
+                overridden_additional_headers.append('x-api-key')
+            if 'api-key' in additional_header_keys:
+                overridden_additional_headers.append('api-key')
             _upsert_header_case_insensitive(headers, 'Authorization', f'Bearer {token}')
+            # OpenAI 호환 사설 서버마다 요구 키가 달라 공통 API 키 헤더를 함께 제공한다.
+            _upsert_header_case_insensitive(headers, 'x-api-key', token)
+            _upsert_header_case_insensitive(headers, 'api-key', token)
 
     additional_payload = parse_json_object_setting(
         additional_payload_input_raw,
@@ -1739,6 +1763,11 @@ def call_llm(
         'provider': provider,
         'trace': trace,
         'llm_debug': {
+            'summary': (
+                f'provider={provider} '
+                f'headers={"|".join(sorted(request_effective_headers.keys()))} '
+                f'payload_keys={"|".join(sorted(payload.keys()))}'
+            ),
             'request': request_preview,
             'response': response_preview,
         },

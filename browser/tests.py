@@ -189,6 +189,47 @@ class BrowserApiTests(TestCase):
 		self.assertEqual(payload['settings']['token'], '***')
 		self.assertEqual(payload['settings']['model'], 'demo')
 
+    @mock.patch('browser.services.urllib.request.urlopen')
+    def test_settings_save_keeps_existing_token_when_masked(self, mocked_urlopen):
+        self.client.post(
+            '/api/settings/',
+            data=json.dumps({'endpoint': 'http://localhost:11434/v1', 'token': 'secret-token', 'model': 'demo'}),
+            content_type='application/json',
+        )
+
+        # 토큰 입력창에는 마스킹된 값이 들어가므로, 다른 필드 저장 시 token='***'가 다시 전송될 수 있다.
+        response = self.client.post(
+            '/api/settings/',
+            data=json.dumps({'endpoint': 'http://localhost:11434/v1', 'token': '***', 'model': 'demo-2'}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        mocked_response = mock.Mock()
+        mocked_response.read.return_value = json.dumps(
+            {
+                'choices': [
+                    {
+                        'message': {
+                            'content': json.dumps({'answer': 'ok', 'sql': ''}, ensure_ascii=False),
+                        },
+                    }
+                ]
+            }
+        ).encode('utf-8')
+        mocked_urlopen.return_value.__enter__.return_value = mocked_response
+
+        chat_response = self.client.post(
+            '/api/chat/',
+            data=json.dumps({'path': 'sample.db', 'message': '테스트'}),
+            content_type='application/json',
+        )
+        self.assertEqual(chat_response.status_code, 200)
+
+        request_obj = mocked_urlopen.call_args[0][0]
+        headers = {k.lower(): v for k, v in request_obj.header_items()}
+        self.assertEqual(headers.get('authorization'), 'Bearer secret-token')
+
 	def test_chat_requires_llm_settings(self):
 		response = self.client.post(
 			'/api/chat/',

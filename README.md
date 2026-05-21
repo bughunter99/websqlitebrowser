@@ -828,6 +828,23 @@ from dual;
 그리드에서 뭔가 따로 하는걸 만들지 말고, oracle_to_sqlite.py의 결과 값으로 다 쓰게 해줘. 거기서 python now를 쓰면 utc니 그런걸 참고하고 따로 계산할 필요 없잖아.
 
 
+사설 llm 서버랑 연결하려고하는데, http request 보낼때,
+토큰을 안 보내는거 같아. 지금 setting form에서 header랑 payload 넣고 해보니까, message가 No API key found in request 라고 에러나.
+이 사설서버는 아마 openai 식인거 같아.
+
+
+다음 실행했는데, 에러나 확인해줘.
+20260521 103732 QUERY SQL request=1 select * from invoices;
+20260521 103732 QUERY ERROR request=1 queryResultCache.shouldCache is not a function cache_removed=true
+
+
+
+select *
+from current.campaign_current aa, invoices;
+
+
+
+
 /////////
 
 

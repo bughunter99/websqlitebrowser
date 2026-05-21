@@ -96,6 +96,9 @@ async function testSettingsConnection() {
         if (data.llm_debug?.response) {
             outputLog(`LLM TEST IN ${data.llm_debug.response}`);
         }
+        if (data.llm_debug?.summary) {
+            outputLog(`LLM TEST SUMMARY ${data.llm_debug.summary}`);
+        }
         outputLog(`SETTINGS TEST RESPONSE ok=true provider=${data.provider || 'unknown'}`);
         status.textContent = `연결 성공: ${data.provider}`;
     } catch (error) {

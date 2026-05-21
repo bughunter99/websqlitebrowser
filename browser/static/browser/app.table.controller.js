@@ -28,14 +28,18 @@ async function loadTable(tableName, tabId = state.tableTabIds.get(tableName)) {
         // 캐시 확인 (SELECT * FROM table)
         const query = `SELECT * FROM ${tableName}`;
         let data;
-        const cachedResult = queryResultCache.get(query, databasePath);
+        const canGetCache = queryResultCache && typeof queryResultCache.get === 'function';
+        const canSetCache = queryResultCache && typeof queryResultCache.set === 'function';
+        const cachedResult = canGetCache ? queryResultCache.get(query, databasePath) : null;
         if (cachedResult) {
             data = cachedResult;
             outputLog(`TABLE CACHE HIT ${tableName} request=${requestId}`, 'info');
         } else {
             data = /** @type {any} */ (await requestJson(`/api/table/?path=${encodeURIComponent(databasePath)}&table=${encodeURIComponent(tableName)}&all=1`));
             // 캐시에 저장
-            queryResultCache.set(query, databasePath, data);
+            if (canSetCache) {
+                queryResultCache.set(query, databasePath, data);
+            }
         }
         
         const isStale = state.tableLoadRequestIds.get(tableName) !== requestId
