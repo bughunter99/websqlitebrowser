@@ -339,6 +339,11 @@ class OracleDateFunctionTranslationTests(TestCase):
             self.assertIn("DATETIME('now', 'localtime', '-1 days')", translated)
             self.assertIn('LIMIT 1', translated)
 
+        def test_translate_oracle_sql_with_browser_timezone_offset(self):
+            sql = "SELECT sysdate FROM dual"
+            translated = oracle_to_sqlite.translate_oracle_sql(sql, timezone_offset_minutes=-540)
+            self.assertIn("DATETIME('now', '+540 minutes')", translated)
+
 class ValidateReadOnlySqlTests(TestCase):
     """validate_read_only_sql() – 허용/거부 정책"""
 

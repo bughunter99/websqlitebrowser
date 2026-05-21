@@ -1202,8 +1202,8 @@ def translate_oracle_rownum(sql: str) -> str:
     return oracle_to_sqlite.translate_oracle_rownum(sql)
 
 
-def translate_oracle_sysdate(sql: str) -> str:
-    return oracle_to_sqlite.translate_oracle_sysdate(sql)
+def translate_oracle_sysdate(sql: str, timezone_offset_minutes: int | None = None) -> str:
+    return oracle_to_sqlite.translate_oracle_sysdate(sql, timezone_offset_minutes=timezone_offset_minutes)
 
 
 def translate_oracle_to_char(sql: str) -> str:
@@ -1215,18 +1215,28 @@ def ensure_oracle_dual(connection: sqlite3.Connection) -> None:
     connection.execute('CREATE TEMP VIEW IF NOT EXISTS dual AS SELECT 1 AS dummy')
 
 
-def run_read_only_query(database_path: Path, sql: str) -> dict[str, object]:
+def run_read_only_query(
+    database_path: Path,
+    sql: str,
+    timezone_offset_minutes: int | None = None,
+) -> dict[str, object]:
     statements = split_sql_statements(sql)
 
     if len(statements) == 1:
-        validated_sql = oracle_to_sqlite.translate_oracle_sql(validate_read_only_sql(statements[0]))
+        validated_sql = oracle_to_sqlite.translate_oracle_sql(
+            validate_read_only_sql(statements[0]),
+            timezone_offset_minutes=timezone_offset_minutes,
+        )
         with connect_database(database_path) as connection:
             ensure_oracle_dual(connection)
             cursor = connection.execute(validated_sql)
             return serialize_rows(cursor)
 
     validated_statements = [
-        oracle_to_sqlite.translate_oracle_sql(validate_read_only_sql(statement))
+        oracle_to_sqlite.translate_oracle_sql(
+            validate_read_only_sql(statement),
+            timezone_offset_minutes=timezone_offset_minutes,
+        )
         for statement in statements
     ]
 
@@ -1246,10 +1256,17 @@ def run_read_only_query(database_path: Path, sql: str) -> dict[str, object]:
     }
 
 
-def run_read_only_query_across_databases(context: dict[str, object], sql: str) -> dict[str, object]:
+def run_read_only_query_across_databases(
+    context: dict[str, object],
+    sql: str,
+    timezone_offset_minutes: int | None = None,
+) -> dict[str, object]:
     statements = split_sql_statements(sql)
     validated_statements = [
-        oracle_to_sqlite.translate_oracle_sql(validate_read_only_sql(statement))
+        oracle_to_sqlite.translate_oracle_sql(
+            validate_read_only_sql(statement),
+            timezone_offset_minutes=timezone_offset_minutes,
+        )
         for statement in statements
     ]
 

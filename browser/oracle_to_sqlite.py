@@ -48,7 +48,20 @@ def _format_decimal(value: float) -> str:
     return f'{value:.6f}'.rstrip('0').rstrip('.')
 
 
-def translate_oracle_sysdate(sql: str) -> str:
+def _build_now_expression(timezone_offset_minutes: int | None, extra_modifier: str | None = None) -> str:
+    modifiers: list[str] = []
+    if timezone_offset_minutes is None:
+        modifiers.append('localtime')
+    else:
+        local_offset_minutes = -int(timezone_offset_minutes)
+        modifiers.append(f'{local_offset_minutes:+d} minutes')
+    if extra_modifier:
+        modifiers.append(extra_modifier)
+    quoted_modifiers = ', '.join(f"'{modifier}'" for modifier in modifiers)
+    return f"DATETIME('now', {quoted_modifiers})"
+
+
+def translate_oracle_sysdate(sql: str, timezone_offset_minutes: int | None = None) -> str:
     """Translate Oracle-style SYSDATE expressions to SQLite DATETIME forms."""
     translated = sql.strip()
 
@@ -59,17 +72,17 @@ def translate_oracle_sysdate(sql: str) -> str:
         if denominator == 0:
             return match.group(0)
         seconds = (numerator / denominator) * 86400.0
-        return f"DATETIME('now', 'localtime', '{sign}{_format_decimal(seconds)} seconds')"
+        return _build_now_expression(timezone_offset_minutes, f"{sign}{_format_decimal(seconds)} seconds")
 
     translated = ORACLE_SYSDATE_FRACTION_PATTERN.sub(_replace_fraction, translated)
 
     def _replace_days(match: re.Match[str]) -> str:
         sign = match.group(1)
         days = float(match.group(2))
-        return f"DATETIME('now', 'localtime', '{sign}{_format_decimal(days)} days')"
+        return _build_now_expression(timezone_offset_minutes, f"{sign}{_format_decimal(days)} days")
 
     translated = ORACLE_SYSDATE_DAYS_PATTERN.sub(_replace_days, translated)
-    translated = ORACLE_SYSDATE_WORD_PATTERN.sub("DATETIME('now', 'localtime')", translated)
+    translated = ORACLE_SYSDATE_WORD_PATTERN.sub(_build_now_expression(timezone_offset_minutes), translated)
     return translated
 
 
@@ -112,9 +125,12 @@ def translate_oracle_to_char(sql: str) -> str:
     return ORACLE_TO_CHAR_PATTERN.sub(_replace, sql)
 
 
-def translate_oracle_sql(sql: str) -> str:
+def translate_oracle_sql(sql: str, timezone_offset_minutes: int | None = None) -> str:
     """Apply Oracle compatibility transforms in a safe order for SQLite execution."""
-    return translate_oracle_sysdate(translate_oracle_to_char(translate_oracle_rownum(sql)))
+    return translate_oracle_sysdate(
+        translate_oracle_to_char(translate_oracle_rownum(sql)),
+        timezone_offset_minutes=timezone_offset_minutes,
+    )
 
 
 __all__ = [
