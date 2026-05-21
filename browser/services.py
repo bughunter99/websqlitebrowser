@@ -8,14 +8,12 @@ import hashlib
 import tempfile
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta, timezone as datetime_timezone
+from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.core.exceptions import SuspiciousOperation
 from django.utils.html import escape
-from django.utils import timezone
 
 from . import oracle_to_sqlite
 
@@ -1205,30 +1203,11 @@ def translate_oracle_rownum(sql: str) -> str:
 
 
 def translate_oracle_sysdate(sql: str, timezone_offset_minutes: int | None = None) -> str:
-    return oracle_to_sqlite.translate_oracle_sysdate(sql, timezone_offset_minutes=timezone_offset_minutes)
+    return oracle_to_sqlite.translate_oracle_sysdate(sql)
 
 
 def translate_oracle_to_char(sql: str) -> str:
     return oracle_to_sqlite.translate_oracle_to_char(sql)
-
-
-def _server_timezone_offset_minutes() -> int:
-    """Return offset minutes for configured Django TIME_ZONE at current time."""
-    tz_name = str(getattr(settings, 'TIME_ZONE', '') or 'UTC')
-    try:
-        tz = ZoneInfo(tz_name)
-        offset = timezone.now().astimezone(tz).utcoffset()
-    except Exception:
-        offset = timezone.now().astimezone().utcoffset()
-    if offset is None:
-        return 0
-    return int(offset.total_seconds() // 60)
-
-
-def _python_now_for_query(timezone_offset_minutes: int | None) -> datetime:
-    if timezone_offset_minutes is None:
-        return datetime.now()
-    return (datetime.now(datetime_timezone.utc) - timedelta(minutes=int(timezone_offset_minutes))).replace(tzinfo=None)
 
 
 def ensure_oracle_dual(connection: sqlite3.Connection) -> None:
@@ -1241,17 +1220,11 @@ def run_read_only_query(
     sql: str,
     timezone_offset_minutes: int | None = None,
 ) -> dict[str, object]:
-    if timezone_offset_minutes is None:
-        timezone_offset_minutes = _server_timezone_offset_minutes()
-    python_now = _python_now_for_query(timezone_offset_minutes)
-
     statements = split_sql_statements(sql)
 
     if len(statements) == 1:
         validated_sql = oracle_to_sqlite.translate_oracle_sql(
             validate_read_only_sql(statements[0]),
-            timezone_offset_minutes=timezone_offset_minutes,
-            python_now=python_now,
         )
         with connect_database(database_path) as connection:
             ensure_oracle_dual(connection)
@@ -1261,8 +1234,6 @@ def run_read_only_query(
     validated_statements = [
         oracle_to_sqlite.translate_oracle_sql(
             validate_read_only_sql(statement),
-            timezone_offset_minutes=timezone_offset_minutes,
-            python_now=python_now,
         )
         for statement in statements
     ]
@@ -1288,16 +1259,10 @@ def run_read_only_query_across_databases(
     sql: str,
     timezone_offset_minutes: int | None = None,
 ) -> dict[str, object]:
-    if timezone_offset_minutes is None:
-        timezone_offset_minutes = _server_timezone_offset_minutes()
-    python_now = _python_now_for_query(timezone_offset_minutes)
-
     statements = split_sql_statements(sql)
     validated_statements = [
         oracle_to_sqlite.translate_oracle_sql(
             validate_read_only_sql(statement),
-            timezone_offset_minutes=timezone_offset_minutes,
-            python_now=python_now,
         )
         for statement in statements
     ]
