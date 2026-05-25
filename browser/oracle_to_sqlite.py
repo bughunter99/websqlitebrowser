@@ -18,6 +18,9 @@ ORACLE_SYSDATE_WORD_PATTERN = re.compile(r'(?i)\bsysdate\b')
 ORACLE_TO_CHAR_PATTERN = re.compile(
     r"(?is)\bto_char\s*\(\s*(?P<expr>.*?)\s*,\s*'(?P<fmt>[^']+)'\s*\)"
 )
+ORACLE_DECODE_CALL_PATTERN = re.compile(r'(?i)\bdecode\s*\(')
+ORACLE_NVL2_CALL_PATTERN = re.compile(r'(?i)\bnvl2\s*\(')
+ORACLE_NVL_CALL_PATTERN = re.compile(r'(?i)\bnvl\s*\(')
 
 
 def translate_oracle_rownum(sql: str) -> str:
@@ -158,6 +161,266 @@ def translate_oracle_to_char(sql: str) -> str:
     return ORACLE_TO_CHAR_PATTERN.sub(_replace, sql)
 
 
+def _find_matching_parenthesis(sql: str, opening_index: int) -> int:
+    depth = 0
+    in_single = False
+    in_double = False
+    index = opening_index
+    length = len(sql)
+
+    while index < length:
+        ch = sql[index]
+        nxt = sql[index + 1] if index + 1 < length else ''
+
+        if in_single:
+            if ch == "'":
+                if nxt == "'":
+                    index += 2
+                    continue
+                in_single = False
+            index += 1
+            continue
+
+        if in_double:
+            if ch == '"':
+                if nxt == '"':
+                    index += 2
+                    continue
+                in_double = False
+            index += 1
+            continue
+
+        if ch == "'":
+            in_single = True
+            index += 1
+            continue
+        if ch == '"':
+            in_double = True
+            index += 1
+            continue
+
+        if ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+            if depth == 0:
+                return index
+
+        index += 1
+
+    return -1
+
+
+def _split_sql_arguments(arguments_text: str) -> list[str]:
+    args: list[str] = []
+    start = 0
+    depth = 0
+    in_single = False
+    in_double = False
+    index = 0
+    length = len(arguments_text)
+
+    while index < length:
+        ch = arguments_text[index]
+        nxt = arguments_text[index + 1] if index + 1 < length else ''
+
+        if in_single:
+            if ch == "'":
+                if nxt == "'":
+                    index += 2
+                    continue
+                in_single = False
+            index += 1
+            continue
+
+        if in_double:
+            if ch == '"':
+                if nxt == '"':
+                    index += 2
+                    continue
+                in_double = False
+            index += 1
+            continue
+
+        if ch == "'":
+            in_single = True
+            index += 1
+            continue
+        if ch == '"':
+            in_double = True
+            index += 1
+            continue
+
+        if ch == '(':
+            depth += 1
+        elif ch == ')':
+            if depth > 0:
+                depth -= 1
+        elif ch == ',' and depth == 0:
+            args.append(arguments_text[start:index].strip())
+            start = index + 1
+
+        index += 1
+
+    args.append(arguments_text[start:].strip())
+    return args
+
+
+def _translate_oracle_nvl_once(sql: str) -> str:
+    result_parts: list[str] = []
+    cursor = 0
+    length = len(sql)
+
+    while cursor < length:
+        match = ORACLE_NVL_CALL_PATTERN.search(sql, cursor)
+        if not match:
+            result_parts.append(sql[cursor:])
+            break
+
+        call_start = match.start()
+        opening_index = match.end() - 1
+        closing_index = _find_matching_parenthesis(sql, opening_index)
+        if closing_index < 0:
+            result_parts.append(sql[cursor:])
+            break
+
+        inner = sql[opening_index + 1:closing_index]
+        args = _split_sql_arguments(inner)
+        if len(args) != 2:
+            # Ambiguous signature; keep original text untouched.
+            result_parts.append(sql[cursor:closing_index + 1])
+            cursor = closing_index + 1
+            continue
+
+        replacement = f'IFNULL({args[0]}, {args[1]})'
+        result_parts.append(sql[cursor:call_start])
+        result_parts.append(replacement)
+        cursor = closing_index + 1
+
+    return ''.join(result_parts)
+
+
+def _build_decode_condition(expr: str, search: str) -> str:
+    # Oracle DECODE treats NULL = NULL as true; emulate it explicitly.
+    return f'(({expr}) = ({search}) OR (({expr}) IS NULL AND ({search}) IS NULL))'
+
+
+def _translate_oracle_decode_once(sql: str) -> str:
+    result_parts: list[str] = []
+    cursor = 0
+    length = len(sql)
+
+    while cursor < length:
+        match = ORACLE_DECODE_CALL_PATTERN.search(sql, cursor)
+        if not match:
+            result_parts.append(sql[cursor:])
+            break
+
+        call_start = match.start()
+        opening_index = match.end() - 1
+        closing_index = _find_matching_parenthesis(sql, opening_index)
+        if closing_index < 0:
+            result_parts.append(sql[cursor:])
+            break
+
+        inner = sql[opening_index + 1:closing_index]
+        args = _split_sql_arguments(inner)
+
+        # Valid Oracle DECODE signatures have at least expr, search, result.
+        if len(args) < 3:
+            result_parts.append(sql[cursor:closing_index + 1])
+            cursor = closing_index + 1
+            continue
+
+        expr = args[0]
+        remaining = len(args) - 1
+        has_default = (remaining % 2) == 1
+        pair_count = (remaining - 1) // 2 if has_default else remaining // 2
+
+        if pair_count <= 0:
+            result_parts.append(sql[cursor:closing_index + 1])
+            cursor = closing_index + 1
+            continue
+
+        default_expr = args[-1] if has_default else 'NULL'
+        when_parts: list[str] = []
+        for index in range(pair_count):
+            search = args[1 + index * 2]
+            value = args[2 + index * 2]
+            when_parts.append(f'WHEN {_build_decode_condition(expr, search)} THEN {value}')
+
+        replacement = f"CASE {' '.join(when_parts)} ELSE {default_expr} END"
+        result_parts.append(sql[cursor:call_start])
+        result_parts.append(replacement)
+        cursor = closing_index + 1
+
+    return ''.join(result_parts)
+
+
+def _translate_oracle_nvl2_once(sql: str) -> str:
+    result_parts: list[str] = []
+    cursor = 0
+    length = len(sql)
+
+    while cursor < length:
+        match = ORACLE_NVL2_CALL_PATTERN.search(sql, cursor)
+        if not match:
+            result_parts.append(sql[cursor:])
+            break
+
+        call_start = match.start()
+        opening_index = match.end() - 1
+        closing_index = _find_matching_parenthesis(sql, opening_index)
+        if closing_index < 0:
+            result_parts.append(sql[cursor:])
+            break
+
+        inner = sql[opening_index + 1:closing_index]
+        args = _split_sql_arguments(inner)
+        if len(args) != 3:
+            # Ambiguous signature; keep original text untouched.
+            result_parts.append(sql[cursor:closing_index + 1])
+            cursor = closing_index + 1
+            continue
+
+        replacement = f'CASE WHEN {args[0]} IS NOT NULL THEN {args[1]} ELSE {args[2]} END'
+        result_parts.append(sql[cursor:call_start])
+        result_parts.append(replacement)
+        cursor = closing_index + 1
+
+    return ''.join(result_parts)
+
+
+def translate_oracle_nvl(sql: str) -> str:
+    """Translate Oracle NVL(expr, fallback) to SQLite IFNULL(expr, fallback)."""
+    translated = sql
+    while True:
+        next_translated = _translate_oracle_nvl_once(translated)
+        if next_translated == translated:
+            return translated
+        translated = next_translated
+
+
+def translate_oracle_decode(sql: str) -> str:
+    """Translate Oracle DECODE(...) to SQLite CASE expression with NULL=NULL semantics."""
+    translated = sql
+    while True:
+        next_translated = _translate_oracle_decode_once(translated)
+        if next_translated == translated:
+            return translated
+        translated = next_translated
+
+
+def translate_oracle_nvl2(sql: str) -> str:
+    """Translate Oracle NVL2(expr, not_null_value, null_value) to SQLite CASE expression."""
+    translated = sql
+    while True:
+        next_translated = _translate_oracle_nvl2_once(translated)
+        if next_translated == translated:
+            return translated
+        translated = next_translated
+
+
 def translate_oracle_sql(
     sql: str,
     timezone_offset_minutes: int | None = None,
@@ -165,7 +428,13 @@ def translate_oracle_sql(
 ) -> str:
     """Apply Oracle compatibility transforms in a safe order for SQLite execution."""
     return translate_oracle_sysdate(
-        translate_oracle_to_char(translate_oracle_rownum(sql)),
+        translate_oracle_to_char(
+            translate_oracle_nvl(
+                translate_oracle_nvl2(
+                    translate_oracle_decode(translate_oracle_rownum(sql))
+                )
+            )
+        ),
         timezone_offset_minutes=timezone_offset_minutes,
         python_now=python_now,
     )
@@ -175,5 +444,8 @@ __all__ = [
     'translate_oracle_rownum',
     'translate_oracle_sysdate',
     'translate_oracle_to_char',
+    'translate_oracle_decode',
+    'translate_oracle_nvl2',
+    'translate_oracle_nvl',
     'translate_oracle_sql',
 ]

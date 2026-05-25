@@ -13,6 +13,89 @@ function initQueryPane() {
         const sync = () => renderSqlHighlight(textarea, highlight);
         textarea.addEventListener('input', sync);
         textarea.addEventListener('scroll', sync);
+
+        const getSelectedLineRange = () => {
+            const value = textarea.value || '';
+            const start = Number(textarea.selectionStart || 0);
+            const end = Number(textarea.selectionEnd || 0);
+            const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+            let lineEnd = value.indexOf('\n', end);
+            if (lineEnd === -1) {
+                lineEnd = value.length;
+            }
+            return {
+                value,
+                start,
+                end,
+                lineStart,
+                lineEnd,
+                selectedText: value.slice(lineStart, lineEnd),
+            };
+        };
+
+        const outdentLine = (line) => {
+            if (line.startsWith('\t')) {
+                return { text: line.slice(1), removed: 1 };
+            }
+            const spaceMatch = line.match(/^ {1,4}/);
+            if (spaceMatch) {
+                const removeCount = spaceMatch[0].length;
+                return { text: line.slice(removeCount), removed: removeCount };
+            }
+            return { text: line, removed: 0 };
+        };
+
+        textarea.addEventListener('keydown', (event) => {
+            if (event.key !== 'Tab') {
+                return;
+            }
+
+            event.preventDefault();
+            const { value, start, end, lineStart, lineEnd, selectedText } = getSelectedLineRange();
+            const hasSelection = end > start;
+
+            if (event.shiftKey) {
+                const lines = selectedText.split('\n');
+                let removedOnFirstLine = 0;
+                let totalRemoved = 0;
+                const outdentedLines = lines.map((line, index) => {
+                    const outdented = outdentLine(line);
+                    if (index === 0) {
+                        removedOnFirstLine = outdented.removed;
+                    }
+                    totalRemoved += outdented.removed;
+                    return outdented.text;
+                });
+
+                const replacement = outdentedLines.join('\n');
+                textarea.value = `${value.slice(0, lineStart)}${replacement}${value.slice(lineEnd)}`;
+
+                if (hasSelection) {
+                    const nextStart = Math.max(lineStart, start - removedOnFirstLine);
+                    const nextEnd = Math.max(nextStart, end - totalRemoved);
+                    textarea.setSelectionRange(nextStart, nextEnd);
+                } else {
+                    const nextCaret = Math.max(lineStart, start - removedOnFirstLine);
+                    textarea.setSelectionRange(nextCaret, nextCaret);
+                }
+            } else if (hasSelection) {
+                const lines = selectedText.split('\n');
+                const indentedLines = lines.map((line) => `\t${line}`);
+                const replacement = indentedLines.join('\n');
+                textarea.value = `${value.slice(0, lineStart)}${replacement}${value.slice(lineEnd)}`;
+
+                const insertedCount = lines.length;
+                const nextStart = start + 1;
+                const nextEnd = end + insertedCount;
+                textarea.setSelectionRange(nextStart, nextEnd);
+            } else {
+                textarea.value = `${value.slice(0, start)}\t${value.slice(end)}`;
+                const nextCaret = start + 1;
+                textarea.setSelectionRange(nextCaret, nextCaret);
+            }
+
+            sync();
+        });
         sync();
     }
 

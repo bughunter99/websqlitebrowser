@@ -1227,6 +1227,18 @@ def translate_oracle_to_char(sql: str) -> str:
     return oracle_to_sqlite.translate_oracle_to_char(sql)
 
 
+def translate_oracle_nvl(sql: str) -> str:
+    return oracle_to_sqlite.translate_oracle_nvl(sql)
+
+
+def translate_oracle_nvl2(sql: str) -> str:
+    return oracle_to_sqlite.translate_oracle_nvl2(sql)
+
+
+def translate_oracle_decode(sql: str) -> str:
+    return oracle_to_sqlite.translate_oracle_decode(sql)
+
+
 def ensure_oracle_dual(connection: sqlite3.Connection) -> None:
     """Provide Oracle-like DUAL compatibility in SQLite execution sessions."""
     connection.execute('CREATE TEMP VIEW IF NOT EXISTS dual AS SELECT 1 AS dummy')

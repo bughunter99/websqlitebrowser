@@ -371,6 +371,16 @@ class OracleDateFunctionTranslationTests(TestCase):
         self.assertIn("STRFTIME('%Y%m%d %H%M%S'", translated)
         self.assertRegex(translated, r"DATETIME\('\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', '-1 days'\)")
 
+    def test_nvl_translates_to_ifnull(self):
+        sql = "SELECT nvl(name, 'UNKNOWN') AS customer_name FROM customers"
+        translated = services.translate_oracle_nvl(sql)
+        self.assertIn("IFNULL(name, 'UNKNOWN')", translated)
+
+    def test_nvl2_translates_to_case_expression(self):
+        sql = "SELECT nvl2(city, city, 'NA') AS city_name FROM customers"
+        translated = services.translate_oracle_nvl2(sql)
+        self.assertIn("CASE WHEN city IS NOT NULL THEN city ELSE 'NA' END", translated)
+
     class OracleToSqliteModuleTests(TestCase):
         """독립 모듈 oracle_to_sqlite 재사용성 검증"""
 
@@ -392,6 +402,18 @@ class OracleDateFunctionTranslationTests(TestCase):
                 python_now=datetime(2026, 5, 21, 9, 0, 0),
             )
             self.assertIn("DATETIME('2026-05-21 09:00:00')", translated)
+
+        def test_translate_oracle_sql_with_nvl(self):
+            sql = "SELECT nvl(city, 'NA') city_name FROM customers WHERE rownum <= 1"
+            translated = oracle_to_sqlite.translate_oracle_sql(sql)
+            self.assertIn("IFNULL(city, 'NA')", translated)
+            self.assertIn('LIMIT 1', translated)
+
+        def test_translate_oracle_sql_with_nvl2(self):
+            sql = "SELECT nvl2(city, city, 'NA') city_name FROM customers WHERE rownum <= 1"
+            translated = oracle_to_sqlite.translate_oracle_sql(sql)
+            self.assertIn("CASE WHEN city IS NOT NULL THEN city ELSE 'NA' END", translated)
+            self.assertIn('LIMIT 1', translated)
 
 class ValidateReadOnlySqlTests(TestCase):
     """validate_read_only_sql() – 허용/거부 정책"""
