@@ -376,12 +376,7 @@ def search_nested_entries(current_path: Path, query: str, limit: int = 50) -> li
                             'path': relative_to_root(child),
                             'type': 'file',
                             'is_sqlite': is_sqlite_file(child),
-                            'size_bytes': size_bytes,
-                            'size_human': format_size(size_bytes),
-                            'modified_at': format_modified(stat.st_mtime),
-                            'parent_dir': '',
-                        }
-                    )
+                                'is_md': child.suffix.lower() == '.md',
                     if len(matches) >= safe_limit:
                         return matches
                 except (OSError, PermissionError):
@@ -449,14 +444,15 @@ def search_nested_entries(current_path: Path, query: str, limit: int = 50) -> li
                                 'path': relative_to_root(child),
                                 'type': 'file',
                                 'is_sqlite': is_sqlite_file(child),
+                                'is_md': child.suffix.lower() == '.md',
                                 'size_bytes': size_bytes,
                                 'size_human': format_size(size_bytes),
                                 'modified_at': format_modified(stat.st_mtime),
                                 'parent_dir': directory.name,
                             }
                         )
-                        if len(matches) >= safe_limit:
-                            return matches
+                    if len(matches) >= safe_limit:
+                        return matches
                     except (OSError, PermissionError):
                         continue
         except (OSError, PermissionError):
@@ -465,10 +461,30 @@ def search_nested_entries(current_path: Path, query: str, limit: int = 50) -> li
     return matches
 
 
-def settings_path() -> Path:
-    return repository_root() / SETTINGS_FILENAME
+def read_md_file(relative_path: str) -> str:
+    """Read a .md file within the allowed repository path."""
+    path = resolve_repo_path(relative_path)
+    if path.suffix.lower() != '.md':
+        raise SuspiciousOperation('Only .md files can be read via this endpoint.')
+    if not path.is_file():
+        raise OSError(f'File not found: {relative_path}')
+    return path.read_text(encoding='utf-8')
 
 
+MD_MAX_BYTES = 512 * 1024  # 512 KB
+
+
+def write_md_file(relative_path: str, content: str) -> None:
+    """Write a .md file within the allowed repository path."""
+    path = resolve_repo_path(relative_path)
+    if path.suffix.lower() != '.md':
+        raise SuspiciousOperation('Only .md files can be written via this endpoint.')
+    if not path.parent.is_dir():
+        raise OSError('Parent directory does not exist.')
+    encoded = content.encode('utf-8')
+    if len(encoded) > MD_MAX_BYTES:
+        raise SuspiciousOperation(f'File content too large (max {MD_MAX_BYTES // 1024} KB).')
+    path.write_text(content, encoding='utf-8')
 def _encrypt_token(token: str) -> str:
     """
     토큰을 인메모리 암호화 (Django SECRET_KEY 기반)

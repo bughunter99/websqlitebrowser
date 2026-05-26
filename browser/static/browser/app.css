@@ -1841,3 +1841,119 @@
         html[data-device="desktop"][data-os="windows"] .explorer-modified {
             font-size: 0.87rem;
         }
+
+        /* ===== MD EDITOR ===== */
+
+        .md-editor-shell {
+            flex-direction: column;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .md-tab-bar {
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 2px;
+            padding: 0 1px;
+            flex: 0 0 auto;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
+            min-height: 23px;
+            max-height: 23px;
+            align-items: stretch;
+            background: linear-gradient(180deg, #d7d3cb, #cac6be);
+        }
+
+        .md-tab-btn {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 1px 4px 1px 7px;
+            font-size: 12px;
+            flex: 0 0 auto;
+            max-width: 180px;
+        }
+
+        .md-tab-title {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+            min-width: 0;
+            pointer-events: none;
+        }
+
+        .md-dirty-dot {
+            color: #c05800;
+            font-size: 10px;
+        }
+
+        .md-tab-close {
+            flex: 0 0 auto;
+            font-size: 13px;
+            line-height: 1;
+            padding: 0 2px;
+            border-radius: 2px;
+            cursor: pointer;
+            color: var(--muted);
+        }
+
+        .md-tab-close:hover {
+            background: rgba(0,0,0,0.15);
+            color: var(--text);
+        }
+
+        .md-editor-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 3px 6px;
+            flex: 0 0 auto;
+            background: var(--surface-strong);
+            border-bottom: 1px solid var(--line-strong);
+            min-height: 26px;
+        }
+
+        .md-editor-path {
+            font-size: 0.64rem;
+            color: var(--muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .md-save-btn {
+            flex: 0 0 auto;
+            font-size: 11px;
+            padding: 2px 8px;
+            min-height: 20px;
+        }
+
+        .md-editor-textarea {
+            flex: 1;
+            min-height: 0;
+            width: 100%;
+            height: 100%;
+            resize: none;
+            border: 0;
+            border-radius: 0;
+            padding: 8px 10px;
+            font-family: "Fixedsys", "FIXEDSYS", "Fixedsys Excelsior 3.01", "Lucida Console", "Courier New", monospace;
+            font-size: 12px;
+            line-height: 1.55;
+            background: var(--surface-strong);
+            color: var(--text);
+            white-space: pre;
+            overflow: auto;
+            tab-size: 2;
+        }
+
+        .md-editor-textarea:focus {
+            outline: none;
+            box-shadow: inset 0 0 0 1px #2f67c0;
+        }

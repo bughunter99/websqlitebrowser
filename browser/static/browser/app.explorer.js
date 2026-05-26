@@ -81,6 +81,17 @@ function _renderExplorerWithCurrentState() {
     renderExplorer(state.lastTreeData);
 }
 
+/**
+ * MD 파일 행인지 확인 (data-is-md 우선, 없으면 경로 확장자로 폴백)
+ * @param {HTMLElement} row
+ * @returns {boolean}
+ */
+function _isRowMd(row) {
+    if (row.dataset.isMd === '1') { return true; }
+    return row.dataset.type === 'file'
+        && String(row.dataset.path || '').toLowerCase().endsWith('.md');
+}
+
 async function _runExplorerFilterSearch(filterQuery) {
     const currentQuery = String(filterQuery || '').trim().toLowerCase();
     outputLog(`FILTER SEARCH start query="${currentQuery}" path="${state.currentPath}"`);
@@ -211,7 +222,7 @@ function renderExplorer(treeData, append = false, startOffset = 0) {
         const parentClass = entry.type === 'parent' ? ' parent-row' : '';
         const searchClass = entry._isFilterSearchResult ? ' explorer-search-result' : '';
         return `
-            <div class="explorer-row${selectedClass}${parentClass}${searchClass}" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.type)}" data-is-sqlite="${entry.is_sqlite ? '1' : '0'}">
+            <div class="explorer-row${selectedClass}${parentClass}${searchClass}" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.type)}" data-is-sqlite="${entry.is_sqlite ? '1' : '0'}" data-is-md="${entry.is_md ? '1' : '0'}">
                 <div class="explorer-order">${escapeHtml(orderText)}</div>
                 <div class="explorer-name-col">
                     <span class="explorer-name" title="${escapeHtml(entry.name || '')}">${highlightExplorerName(entry.name, state.explorerFilter)}</span>
@@ -247,6 +258,10 @@ function setExplorerFilter(value) {
 async function loadTree(path = '', offset = 0, append = false) {
     // 새 디렉터리 탐색 시 이전 백그라운드 로딩 취소
     if (!append) {
+        // MD 탭이 열려 있으면 닫기 전 확인
+        if (typeof closeAllMdTabs === 'function' && !closeAllMdTabs()) {
+            return; // 사용자가 취소
+        }
         _explorerBgGeneration++;
         _resetExplorerFilterSearch();
     }
@@ -467,6 +482,9 @@ function wireExplorerPanel() {
         if (row.dataset.type === 'file' && row.dataset.isSqlite === '1') {
             openDatabase(state.selectedExplorerPath);
         }
+        if (_isRowMd(row)) {
+            openMdEditor(state.selectedExplorerPath);
+        }
     });
 
     const activateExplorerRow = (row) => {
@@ -478,6 +496,9 @@ function wireExplorerPanel() {
         }
         if (row.dataset.isSqlite === '1') {
             openDatabase(targetPath);
+        }
+        if (_isRowMd(row)) {
+            openMdEditor(targetPath);
         }
     };
 
@@ -601,6 +622,9 @@ function wireExplorerPanel() {
 
         if (nextRow.dataset.type === 'file' && nextRow.dataset.isSqlite === '1') {
             openDatabase(state.selectedExplorerPath);
+        }
+        if (_isRowMd(nextRow)) {
+            openMdEditor(state.selectedExplorerPath);
         }
     });
 

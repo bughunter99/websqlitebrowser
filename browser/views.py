@@ -24,6 +24,7 @@ from .services import (
 	is_sqlite_file,
 	load_settings,
 	quote_identifier,
+	read_md_file,
 	relative_to_root,
 	resolve_repo_path,
 	run_read_only_query,
@@ -33,6 +34,7 @@ from .services import (
 	connect_database,
 	explorer_top_root,
 	ensure_sales_invoices_time_column,
+	write_md_file,
 )
 
 
@@ -112,6 +114,7 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 						'path': relative_to_root(child),
 						'type': 'file' if is_file else 'directory',
 						'is_sqlite': is_sqlite_file(child),
+						'is_md': child.suffix.lower() == '.md' if is_file else False,
 						'size_bytes': size_bytes,
 						'size_human': format_size(size_bytes) if is_file else '',
 						'modified_at': format_modified(stat.st_mtime),
@@ -144,6 +147,31 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 	except PermissionError as error:
 		# 권한 거부: 현재 디렉토리에 접근 불가
 		return _json_error(f'Cannot access directory: {str(error)}', 403)
+	except (OSError, SuspiciousOperation) as error:
+		return _json_error(str(error))
+
+
+@require_GET
+def file_read_view(request: HttpRequest) -> JsonResponse:
+	try:
+		relative_path = request.GET.get('path', '')
+		content = read_md_file(relative_path)
+		return JsonResponse({'path': relative_path, 'content': content})
+	except (OSError, SuspiciousOperation) as error:
+		return _json_error(str(error))
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def file_write_view(request: HttpRequest) -> JsonResponse:
+	try:
+		data = json.loads(request.body)
+		relative_path = str(data.get('path', ''))
+		content = str(data.get('content', ''))
+		write_md_file(relative_path, content)
+		return JsonResponse({'ok': True, 'path': relative_path})
+	except (ValueError, json.JSONDecodeError) as error:
+		return _json_error(f'Invalid request body: {error}')
 	except (OSError, SuspiciousOperation) as error:
 		return _json_error(str(error))
 

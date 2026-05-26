@@ -5,6 +5,7 @@ wireChatPanel();
 wireOutputPanel();
 wireSidebarLayout();
 wireGlobalShortcuts();
+wireMdEditor();
 
 loadSettings();
 loadTree(localStorage.getItem('websqlitebrowser.explorer.currentPath') || '');
