@@ -83,7 +83,7 @@ function _renderExplorerWithCurrentState() {
 
 async function _runExplorerFilterSearch(filterQuery) {
     const currentQuery = String(filterQuery || '').trim().toLowerCase();
-    if (!currentQuery || currentQuery.length < 2 || !state.currentPath || !state.lastTreeData) {
+    if (!currentQuery || currentQuery.length < 2 || !state.lastTreeData) {
         _resetExplorerFilterSearch();
         _renderExplorerWithCurrentState();
         return;

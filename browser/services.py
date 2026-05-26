@@ -325,6 +325,37 @@ def search_nested_entries(current_path: Path, query: str, limit: int = 50) -> li
     safe_limit = min(max(int(limit), 1), 200)
     matches: list[dict[str, object]] = []
 
+    # 1) 현재 폴더의 파일명도 함께 검색한다.
+    try:
+        with os.scandir(str(current_path)) as scan:
+            for entry in scan:
+                try:
+                    if not entry.is_file():
+                        continue
+                    if q not in entry.name.lower():
+                        continue
+                    child = Path(entry.path)
+                    stat = entry.stat()
+                    size_bytes = int(stat.st_size)
+                    matches.append(
+                        {
+                            'name': entry.name,
+                            'path': relative_to_root(child),
+                            'type': 'file',
+                            'is_sqlite': is_sqlite_file(child),
+                            'size_bytes': size_bytes,
+                            'size_human': format_size(size_bytes),
+                            'modified_at': format_modified(stat.st_mtime),
+                            'parent_dir': '',
+                        }
+                    )
+                    if len(matches) >= safe_limit:
+                        return matches
+                except (OSError, PermissionError):
+                    continue
+    except (OSError, PermissionError):
+        pass
+
     # Heuristic: query의 선행 영문 prefix가 있으면 동일 이름 폴더를 우선 조회.
     prefix = ''
     for ch in q:
