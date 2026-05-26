@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from threading import Lock
 from time import monotonic
+from uuid import uuid4
 
 from django.conf import settings
 from django.core.exceptions import SuspiciousOperation
@@ -63,8 +64,11 @@ CLARIFICATION_SELECTED_MARKERS = (
 
 DIRECTORY_LIST_CACHE_TTL_SECONDS = 20.0
 DIRECTORY_STATS_CACHE_TTL_SECONDS = 5.0
+DIRECTORY_STREAM_TTL_SECONDS = 90.0
+DIRECTORY_STATS_SCAN_LIMIT = 5000
 _DIRECTORY_LIST_CACHE: dict[str, dict[str, object]] = {}
 _DIRECTORY_STATS_CACHE: dict[str, dict[str, object]] = {}
+_DIRECTORY_STREAMS: dict[str, dict[str, object]] = {}
 _DIRECTORY_CACHE_LOCK = Lock()
 
 
@@ -225,14 +229,131 @@ def list_directory_entries(current_path: Path) -> list[tuple[str, str, str, bool
     return entries
 
 
-def directory_stats(current_path: Path) -> dict[str, object]:
+def _cleanup_directory_streams(now: float) -> None:
+    expired: list[str] = []
+    for token, stream in _DIRECTORY_STREAMS.items():
+        last_access = float(stream.get('last_access_at', 0.0))
+        if (now - last_access) > DIRECTORY_STREAM_TTL_SECONDS:
+            expired.append(token)
+
+    for token in expired:
+        stream = _DIRECTORY_STREAMS.pop(token, None)
+        if not stream:
+            continue
+        scan = stream.get('scan')
+        try:
+            if scan is not None:
+                scan.close()
+        except OSError:
+            pass
+
+
+def _serialize_direntry(entry: os.DirEntry, current_path: Path) -> dict[str, object] | None:
+    try:
+        is_file = entry.is_file()
+        child = current_path / entry.name
+        stat = entry.stat()
+        size_bytes = stat.st_size if is_file else 0
+        return {
+            'name': entry.name,
+            'path': relative_to_root(child),
+            'type': 'file' if is_file else 'directory',
+            'is_sqlite': is_sqlite_file(child) if is_file else False,
+            'size_bytes': size_bytes,
+            'size_human': format_size(size_bytes) if is_file else '',
+            'modified_at': format_modified(stat.st_mtime),
+        }
+    except (OSError, PermissionError):
+        return None
+
+
+def get_directory_entries_page(
+    current_path: Path,
+    offset: int,
+    limit: int,
+    cursor: str = '',
+) -> dict[str, object]:
+    now = monotonic()
+    with _DIRECTORY_CACHE_LOCK:
+        _cleanup_directory_streams(now)
+
+        stream: dict[str, object] | None = None
+        if cursor:
+            candidate = _DIRECTORY_STREAMS.get(cursor)
+            if candidate and candidate.get('path') == str(current_path):
+                stream = candidate
+
+        if stream is None:
+            scan = os.scandir(str(current_path))
+            token = uuid4().hex
+            stream = {
+                'path': str(current_path),
+                'scan': scan,
+                'iter': iter(scan),
+                'entries': [],
+                'done': False,
+                'last_access_at': now,
+            }
+            _DIRECTORY_STREAMS[token] = stream
+            cursor = token
+
+        stream['last_access_at'] = now
+
+        entries = stream['entries']
+        done = bool(stream.get('done', False))
+
+        target_count = offset + limit + 1
+        while len(entries) < target_count and not done:
+            iterator = stream.get('iter')
+            if iterator is None:
+                done = True
+                stream['done'] = True
+                break
+            try:
+                next_entry = next(iterator)
+            except StopIteration:
+                done = True
+                stream['done'] = True
+                scan = stream.get('scan')
+                try:
+                    if scan is not None:
+                        scan.close()
+                except OSError:
+                    pass
+                stream['iter'] = None
+                stream['scan'] = None
+                break
+
+            serialized = _serialize_direntry(next_entry, current_path)
+            if serialized is not None:
+                entries.append(serialized)
+
+        page_entries = entries[offset:offset + limit]
+        next_offset = offset + len(page_entries)
+        has_more = (len(entries) > (offset + limit)) or (not done)
+        total_entries = len(entries) if done else (next_offset + (1 if has_more else 0))
+
+        if done and not has_more:
+            # Completed streams are no longer needed.
+            _DIRECTORY_STREAMS.pop(cursor, None)
+
+    return {
+        'entries': page_entries,
+        'next_offset': next_offset,
+        'has_more': has_more,
+        'total_entries': total_entries,
+        'cursor': cursor,
+    }
+
+
+def directory_stats(current_path: Path, *, full_scan: bool = False) -> dict[str, object]:
     """
     현재 디렉토리의 직접 자식 항목만 통계 계산
     - 성능: O(n) where n = 현재 디렉토리의 직접 자식 개수
     - 이전 방식의 재귀 스캔 제거 (O(n*m) 성능 문제 해결)
     - 권한 거부 시 안전하게 처리
     """
-    cache_key = str(current_path)
+    cache_key = f"{str(current_path)}|full={1 if full_scan else 0}"
     signature = _directory_signature(current_path)
     now = monotonic()
 
@@ -250,8 +371,15 @@ def directory_stats(current_path: Path) -> dict[str, object]:
     files = 0
     total_size_bytes = 0
 
+    scanned = 0
+    partial = False
+
     try:
         for child in current_path.iterdir():
+            scanned += 1
+            if (not full_scan) and scanned > DIRECTORY_STATS_SCAN_LIMIT:
+                partial = True
+                break
             try:
                 # 심볼릭 링크 추적 안 함
                 if child.is_symlink():
@@ -281,6 +409,9 @@ def directory_stats(current_path: Path) -> dict[str, object]:
         'files': files,
         'total_size_bytes': total_size_bytes,
         'total_size_human': format_size(total_size_bytes),
+        'partial': partial,
+        'scanned_entries': scanned,
+        'scan_limit': 0 if full_scan else DIRECTORY_STATS_SCAN_LIMIT,
         'disk': {
             'total_bytes': disk.total,
             'used_bytes': disk.used,

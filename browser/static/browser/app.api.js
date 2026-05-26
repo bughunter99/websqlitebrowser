@@ -49,6 +49,12 @@ function addTimestampToUrl(url) {
 async function requestJson(url, options = {}, retryCount = 0) {
     url = addTimestampToUrl(url); // 타임스탬프 추가
 
+    const timeoutMs = Number(options && options.timeoutMs) > 0
+        ? Number(options.timeoutMs)
+        : API_CONFIG.timeout;
+    const fetchOptions = { ...options };
+    delete fetchOptions.timeoutMs;
+
     const controller = new AbortController();
     const externalSignal = options && options.signal instanceof AbortSignal ? options.signal : null;
     let onExternalAbort = null;
@@ -61,12 +67,12 @@ async function requestJson(url, options = {}, retryCount = 0) {
         }
     }
     const startTime = Date.now();
-    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     
     try {
         const response = await fetch(url, {
             cache: 'no-store',
-            ...options,
+            ...fetchOptions,
             signal: controller.signal,
         });
 

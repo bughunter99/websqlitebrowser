@@ -51,6 +51,7 @@ const state = createObservableState({
     explorerFilter: '',
     lastTreeData: null,
     selectedExplorerPath: '',
+    explorerCursor: '',
         explorerPaginationOffset: 0,
         explorerTotalEntries: 0,
         explorerHasMore: false,

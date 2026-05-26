@@ -891,6 +891,15 @@ data explorer에서 테이블을 선택하고,
 이 부분 확인해줘. 지금 사용하는 폴더에 17만개 파일이 있는데, 로딩하는데 너무 오래 걸려.
 더 개선할 수 있는 방법은 없을까?
 
+파일 17만개 있는 폴더 들어가니까 안되. 
+API TIMEOUT RETRY url=/api/tree/?path ~ delay=1000ms
+API TIMEOUT RETRY url=/api/tree/?path ~ delay=2000ms
+API TIMEOUT RETRY url=/api/tree/?path ~ delay=4000ms
+DIR ERROR 서버 응답 시간이 초과되었습니다.
+이렇게 나와.
+
+
+
 
 
 
