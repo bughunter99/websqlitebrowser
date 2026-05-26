@@ -630,10 +630,26 @@
             user-select: none;
         }
 
+        .explorer-col-resizer::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 2px;
+            bottom: 2px;
+            width: 1px;
+            background: #9aabc0;
+            transform: translateX(-50%);
+        }
+
         .explorer-col-resizer:hover,
         .explorer-col-resizer.resizing {
             background: rgba(80, 130, 220, 0.45);
             border-radius: 2px;
+        }
+
+        .explorer-col-resizer:hover::before,
+        .explorer-col-resizer.resizing::before {
+            background: rgba(80, 130, 220, 0.9);
         }
 
         .explorer-head {
