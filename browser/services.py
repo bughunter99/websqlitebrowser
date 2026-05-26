@@ -322,8 +322,41 @@ def search_nested_entries(current_path: Path, query: str, limit: int = 50) -> li
     if not q:
         return []
 
+    # 구분자('.', '-', '_', 공백 등)가 포함된 질의를 위한 토큰/정규화 문자열.
+    raw_tokens = [token for token in re.split(r'[^a-z0-9]+', q) if token]
+    query_tokens: list[str] = []
+    seen_tokens: set[str] = set()
+    for token in [q, q.split('.', 1)[0], *raw_tokens]:
+        token = token.strip()
+        if len(token) < 2:
+            continue
+        if token in seen_tokens:
+            continue
+        seen_tokens.add(token)
+        query_tokens.append(token)
+
+    normalized_query_tokens = {
+        re.sub(r'[^a-z0-9]+', '', token)
+        for token in query_tokens
+        if token
+    }
+    normalized_query_tokens = {token for token in normalized_query_tokens if len(token) >= 2}
+
     safe_limit = min(max(int(limit), 1), 200)
     matches: list[dict[str, object]] = []
+
+    def _matches_name(name: str) -> bool:
+        name_lower = name.lower()
+        if q in name_lower:
+            return True
+        for token in query_tokens:
+            if token in name_lower:
+                return True
+        normalized_name = re.sub(r'[^a-z0-9]+', '', name_lower)
+        for token in normalized_query_tokens:
+            if token in normalized_name:
+                return True
+        return False
 
     # 1) 현재 폴더의 파일명도 함께 검색한다.
     try:
@@ -332,7 +365,7 @@ def search_nested_entries(current_path: Path, query: str, limit: int = 50) -> li
                 try:
                     if not entry.is_file():
                         continue
-                    if q not in entry.name.lower():
+                    if not _matches_name(entry.name):
                         continue
                     child = Path(entry.path)
                     stat = entry.stat()
@@ -384,7 +417,10 @@ def search_nested_entries(current_path: Path, query: str, limit: int = 50) -> li
                     if key in seen:
                         continue
                     name_lower = entry.name.lower()
-                    if q.startswith(name_lower) or name_lower in q:
+                    # 대량 디렉토리에서 과도한 후보 누락/혼입을 막기 위해 접두 기반으로 선별.
+                    is_prefix_match = bool(prefix) and (name_lower.startswith(prefix) or prefix.startswith(name_lower))
+                    is_query_prefix_match = len(name_lower) >= 3 and q.startswith(name_lower)
+                    if name_lower == prefix or is_prefix_match or is_query_prefix_match:
                         candidate_dirs.append(child_dir)
                         seen.add(key)
                 except (OSError, PermissionError):
@@ -402,7 +438,7 @@ def search_nested_entries(current_path: Path, query: str, limit: int = 50) -> li
                     try:
                         if not entry.is_file():
                             continue
-                        if q not in entry.name.lower():
+                        if not _matches_name(entry.name):
                             continue
                         child = Path(entry.path)
                         stat = entry.stat()
