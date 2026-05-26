@@ -376,7 +376,13 @@ def search_nested_entries(current_path: Path, query: str, limit: int = 50) -> li
                             'path': relative_to_root(child),
                             'type': 'file',
                             'is_sqlite': is_sqlite_file(child),
-                                'is_md': child.suffix.lower() == '.md',
+                            'is_md': child.suffix.lower() == '.md',
+                            'size_bytes': size_bytes,
+                            'size_human': format_size(size_bytes),
+                            'modified_at': format_modified(stat.st_mtime),
+                            'parent_dir': '',
+                        }
+                    )
                     if len(matches) >= safe_limit:
                         return matches
                 except (OSError, PermissionError):
@@ -451,8 +457,8 @@ def search_nested_entries(current_path: Path, query: str, limit: int = 50) -> li
                                 'parent_dir': directory.name,
                             }
                         )
-                    if len(matches) >= safe_limit:
-                        return matches
+                        if len(matches) >= safe_limit:
+                            return matches
                     except (OSError, PermissionError):
                         continue
         except (OSError, PermissionError):
