@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 
 from django.conf import settings
@@ -17,8 +18,9 @@ from .services import (
 	call_llm,
 	summarize_chat_context,
 	directory_stats,
-	get_directory_entries_page,
 	fetch_tables,
+	format_modified,
+	format_size,
 	is_sqlite_file,
 	load_settings,
 	quote_identifier,
@@ -61,17 +63,16 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 		# Pagination parameters
 		limit = int(request.GET.get('limit', '500'))
 		offset = int(request.GET.get('offset', '0'))
-		limit = min(max(limit, 50), 5000)  # 50-5000 range
+		limit = min(max(limit, 50), 1000)  # 50-1000 range
 		offset = max(offset, 0)
-		cursor = str(request.GET.get('cursor', '')).strip()
 
+		all_entries = []
 		try:
-			page = get_directory_entries_page(
-				current_path=current_path,
-				offset=offset,
-				limit=limit,
-				cursor=cursor,
-			)
+			# os.scandir()을 사용해 DirEntry의 캐시된 is_file() 활용 (stat 호출 최소화)
+			with os.scandir(str(current_path)) as scan:
+				raw = list(scan)
+			# 디렉토리 먼저, 같은 타입 내에서는 이름 순
+			all_entries = sorted(raw, key=lambda e: (e.is_file(), e.name.lower()))
 		except PermissionError as e:
 			has_parent = current_path != explorer_top_root()
 			# 권한 거부: 부분 결과와 에러 메시지 함께 반환
@@ -91,11 +92,33 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 				}
 			)
 
-		entries = page['entries']
-		total_count = int(page['total_entries'])
-		next_offset = int(page['next_offset'])
-		has_more = bool(page['has_more'])
-		next_cursor = str(page.get('cursor', '') or '')
+		# Serialize visible entries only
+		total_count = len(all_entries)
+		visible_entries = all_entries[offset:offset + limit]
+		next_offset = min(offset + len(visible_entries), total_count)
+
+		from pathlib import Path as _Path
+		entries = []
+		for entry in visible_entries:
+			try:
+				stat = entry.stat()
+				is_file = entry.is_file()
+				child = _Path(entry.path)
+				size_bytes = stat.st_size if is_file else 0
+				entries.append(
+					{
+						'name': entry.name,
+						'path': relative_to_root(child),
+						'type': 'file' if is_file else 'directory',
+						'is_sqlite': is_sqlite_file(child),
+						'size_bytes': size_bytes,
+						'size_human': format_size(size_bytes) if is_file else '',
+						'modified_at': format_modified(stat.st_mtime),
+					}
+				)
+			except (OSError, PermissionError):
+				# Skip entries we can't stat
+				pass
 
 		has_parent = current_path != explorer_top_root()
 		parent = ''
@@ -114,34 +137,11 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 				'offset': offset,
 				'next_offset': next_offset,
 				'limit': limit,
-				'has_more': has_more,
-				'cursor': next_cursor,
+				'has_more': next_offset < total_count,
 			}
 		)
 	except PermissionError as error:
 		# 권한 거부: 현재 디렉토리에 접근 불가
-		return _json_error(f'Cannot access directory: {str(error)}', 403)
-	except (OSError, SuspiciousOperation) as error:
-		return _json_error(str(error))
-
-
-@require_GET
-def repository_tree_stats(request: HttpRequest) -> JsonResponse:
-	try:
-		relative_path = request.GET.get('path', '')
-		current_path = resolve_repo_path(relative_path)
-
-		if not current_path.exists() or not current_path.is_dir():
-			raise SuspiciousOperation('Directory does not exist.')
-
-		return JsonResponse(
-			{
-				'current_path': relative_to_root(current_path),
-				'current_abs_path': str(current_path),
-				'stats': directory_stats(current_path, full_scan=True),
-			}
-		)
-	except PermissionError as error:
 		return _json_error(f'Cannot access directory: {str(error)}', 403)
 	except (OSError, SuspiciousOperation) as error:
 		return _json_error(str(error))

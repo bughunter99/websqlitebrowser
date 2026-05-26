@@ -6,9 +6,8 @@
 
 /** 백그라운드 로딩 취소 제어용 카운터. loadTree 호출마다 증가해 이전 bg 루프를 무효화한다. */
 let _explorerBgGeneration = 0;
-let _explorerStatsRequestSeq = 0;
 const EXPLORER_INITIAL_LIMIT = 120;
-const EXPLORER_CHUNK_LIMIT = 2000;
+const EXPLORER_CHUNK_LIMIT = 1000;
 
 function _setExplorerStatusbar(stats) {
     const safeStats = stats || {};
@@ -19,25 +18,6 @@ function _setExplorerStatusbar(stats) {
         `size ${safeStats.total_size_human || '0 B'}`,
         `disk ${Number(disk.used_percent || 0).toFixed(1)}%`,
     ].join(' | ');
-}
-
-async function _refreshExplorerStatsFull(path, requestSeq) {
-    try {
-        const url = `/api/tree/stats/?path=${encodeURIComponent(path)}`;
-        const data = /** @type {any} */ (await requestJson(url, { timeoutMs: 300000 }));
-        if (_explorerStatsRequestSeq !== requestSeq) {
-            return;
-        }
-        const stats = data.stats || {};
-        _setExplorerStatusbar(stats);
-        outputLog(`DIR STATS full folders=${Number(stats.directories || 0)} files=${Number(stats.files || 0)} size=${stats.total_size_human || '0 B'}`);
-    } catch (error) {
-        if (_explorerStatsRequestSeq !== requestSeq) {
-            return;
-        }
-        const errorMsg = error?.message || String(error);
-        outputLog(`DIR STATS FULL ERROR ${errorMsg}`, 'warn');
-    }
 }
 
 function _countExplorerEntryTypes(entries) {
@@ -156,17 +136,13 @@ async function loadTree(path = '', offset = 0, append = false) {
     try {
         // 첫 화면은 빠르게, 이후는 큰 청크로 백그라운드 로딩
         const limit = (offset === 0 && !append) ? EXPLORER_INITIAL_LIMIT : EXPLORER_CHUNK_LIMIT;
-        let url = `/api/tree/?path=${encodeURIComponent(path)}&offset=${offset}&limit=${limit}`;
-        if (append && state.explorerCursor) {
-            url += `&cursor=${encodeURIComponent(String(state.explorerCursor))}`;
-        }
-        const data = /** @type {any} */ (await requestJson(url, { timeoutMs: 120000 }));
+        const url = `/api/tree/?path=${encodeURIComponent(path)}&offset=${offset}&limit=${limit}`;
+        const data = /** @type {any} */ (await requestJson(url));
         
         // 새로운 경로이거나 처음 로드인 경우 초기화
         if (offset === 0 || !append) {
             state.currentPath = data.current_path;
             state.lastTreeData = { ...data };
-            state.explorerCursor = String(data.cursor || '');
             // 다음 청크 시작 오프셋 (서버 기준 next_offset 우선 사용)
             const nextOffset = Number(data.next_offset);
             state.explorerPaginationOffset = Number.isFinite(nextOffset)
@@ -177,7 +153,6 @@ async function loadTree(path = '', offset = 0, append = false) {
             if (state.lastTreeData) {
                 state.lastTreeData.entries.push(...(Array.isArray(data.entries) ? data.entries : []));
             }
-            state.explorerCursor = String(data.cursor || state.explorerCursor || '');
             const nextOffset = Number(data.next_offset);
             state.explorerPaginationOffset = Number.isFinite(nextOffset)
                 ? nextOffset
@@ -203,11 +178,6 @@ async function loadTree(path = '', offset = 0, append = false) {
         _setExplorerStatusbar(stats);
         if (stats.partial) {
             outputLog(`DIR STATS sampled=${Number(stats.scanned_entries || 0)} limit=${Number(stats.scan_limit || 0)} (partial)`, 'info');
-            if (offset === 0 || !append) {
-                const statsRequestSeq = _explorerStatsRequestSeq + 1;
-                _explorerStatsRequestSeq = statsRequestSeq;
-                _refreshExplorerStatsFull(path, statsRequestSeq);
-            }
         }
 
         // Pagination 정보 저장
@@ -266,7 +236,7 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation, pro
     let offset = startOffset;
     let lastProgressLogAt = 0;
 
-    while (state.explorerHasMore) {
+    while (offset < total) {
         if (_explorerBgGeneration !== generation) return;
 
         // UI 블로킹 방지를 위한 짧은 대기
@@ -274,11 +244,8 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation, pro
         if (_explorerBgGeneration !== generation) return;
 
         try {
-            let url = `/api/tree/?path=${encodeURIComponent(path)}&offset=${offset}&limit=${CHUNK}`;
-            if (state.explorerCursor) {
-                url += `&cursor=${encodeURIComponent(String(state.explorerCursor))}`;
-            }
-            const data = /** @type {any} */ (await requestJson(url, { timeoutMs: 120000 }));
+            const url = `/api/tree/?path=${encodeURIComponent(path)}&offset=${offset}&limit=${CHUNK}`;
+            const data = /** @type {any} */ (await requestJson(url));
 
             if (_explorerBgGeneration !== generation) return;
 
@@ -295,7 +262,6 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation, pro
 
             if (state.lastTreeData && state.currentPath === path) {
                 state.lastTreeData.entries.push(...newEntries);
-                state.explorerCursor = String(data.cursor || state.explorerCursor || '');
                 state.explorerPaginationOffset = resolvedNextOffset;
                 state.explorerTotalEntries = data.total_entries || total;
                 state.explorerHasMore = data.has_more || false;
