@@ -108,9 +108,8 @@ async function testSettingsConnection() {
             request_timeout: document.getElementById('request-timeout').value,
         };
         outputLog(`SETTINGS TEST REQUEST request_url=${payload.request_url || '(empty)'} request_timeout=${payload.request_timeout || '(empty)'} request_headers=${payload.request_headers ? '[set]' : '[empty]'} request_json=${payload.request_json ? '[set]' : '[empty]'}`);
-        const headersPreview = String(payload.request_headers || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+        outputLog(`SETTINGS TEST HEADERS ${payload.request_headers || '(empty)'}`);
         const payloadPreview = String(payload.request_json || '').replace(/\s+/g, ' ').trim().slice(0, 220);
-        outputLog(`SETTINGS TEST RAW request_headers_preview=${headersPreview || '(empty)'}`);
         outputLog(`SETTINGS TEST RAW request_json_preview=${payloadPreview || '(empty)'}`);
         const data = await requestJson('/api/settings/test/', {
             method: 'POST',

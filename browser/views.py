@@ -322,7 +322,7 @@ def settings_test_view(request: HttpRequest) -> JsonResponse:
 		# 연결 테스트 성공 시 현재 값 자동 저장 (Chat에서 동일 설정 즉시 사용).
 		save_settings(settings_data)
 		return JsonResponse({'ok': True, 'provider': result['provider'], 'llm_debug': result.get('llm_debug')})
-	except (json.JSONDecodeError, OSError, sqlite3.Error, SuspiciousOperation) as error:
+	except Exception as error:
 		return _json_error(str(error))
 
 
