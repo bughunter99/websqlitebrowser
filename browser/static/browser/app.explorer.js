@@ -634,6 +634,38 @@ function wireExplorerPanel() {
             loadTree(state.currentPath);
         });
     }
+
+    const generateSkillsBtn = /** @type {HTMLButtonElement|null} */ (document.getElementById('generate-skills'));
+    if (generateSkillsBtn) {
+        generateSkillsBtn.addEventListener('click', async () => {
+            generateSkillsBtn.disabled = true;
+            outputLog(`SKILL GEN start path="${state.currentPath || '(root)'}"`);
+            try {
+                const data = await requestJson('/api/skill/generate/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: state.currentPath }),
+                });
+                const results = data.results || [];
+                if (results.length === 0) {
+                    outputLog('SKILL GEN 이 폴더에 SQLite 파일이 없습니다.');
+                } else {
+                    for (const r of results) {
+                        if (r.status === 'error') {
+                            outputLog(`SKILL GEN ERROR db=${r.db} ${r.error}`, 'error');
+                        } else {
+                            outputLog(`SKILL GEN ${r.status.toUpperCase()} ${r.skill_path}`);
+                        }
+                    }
+                }
+                loadTree(state.currentPath);
+            } catch (error) {
+                outputLog(`SKILL GEN ERROR ${error?.message || String(error)}`, 'error');
+            } finally {
+                generateSkillsBtn.disabled = false;
+            }
+        });
+    }
 }
 
 function _wireExplorerColumnResize() {

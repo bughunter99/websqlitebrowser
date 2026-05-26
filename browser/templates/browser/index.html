@@ -51,6 +51,7 @@
                         <div class="explorer-topline">
                             <div class="path-chip" id="workspace-root">repository</div>
                             <button class="button-secondary" id="workspace-reload">Reload</button>
+                            <button class="button-secondary" id="generate-skills" title="현재 폴더의 SQLite 파일로 스킬 MD 자동 생성 (LLM 필요)">Auto Skill</button>
                         </div>
                         <input id="explorer-filter" type="text" placeholder="Filter (이름 포함 검색)">
                         <div class="explorer-list" id="explorer-list" tabindex="0" aria-label="Data Explorer list"></div>
@@ -190,7 +191,7 @@
     <script src="{% static 'browser/app.query.js' %}?v=20260521-3"></script>
     <script src="{% static 'browser/app.panel.js' %}?v=20260516-1"></script>
     <script src="{% static 'browser/app.md.editor.js' %}?v=20260526-1"></script>
-    <script src="{% static 'browser/app.explorer.js' %}?v=20260527-1"></script>
+    <script src="{% static 'browser/app.explorer.js' %}?v=20260527-2"></script>
     <script src="{% static 'browser/app.grid-interactions.js' %}?v=20260516-1"></script>
     <script src="{% static 'browser/app.settings.js' %}?v=20260521-7"></script>
     <script src="{% static 'browser/app.chat.js' %}?v=20260517-16"></script>

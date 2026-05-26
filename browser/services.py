@@ -2141,3 +2141,157 @@ def call_llm(
             'response': response_preview,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Skill document auto-generation
+# ---------------------------------------------------------------------------
+
+SKILL_AUTOGEN_SAMPLE_ROWS = 5
+SKILL_AUTOGEN_MAX_TABLES = 20
+
+
+def _call_llm_raw_text(
+    settings_data: dict[str, str],
+    system_prompt: str,
+    user_prompt: str,
+) -> str:
+    """LLM API를 직접 호출해 raw 텍스트 응답을 반환한다."""
+    request_url = str(settings_data.get('request_url', '')).strip()
+    request_headers_input_raw = str(settings_data.get('request_headers', ''))
+    request_json_input_raw = str(settings_data.get('request_json', ''))
+    request_timeout_raw = str(settings_data.get('request_timeout', DEFAULT_REQUEST_TIMEOUT_SECONDS)).strip()
+
+    if not request_url:
+        raise SuspiciousOperation('LLM request_url이 설정되지 않았습니다. 설정 패널에서 URL을 먼저 입력하세요.')
+
+    try:
+        request_timeout = int(float(request_timeout_raw))
+    except (TypeError, ValueError):
+        raise SuspiciousOperation('request_timeout must be a positive number.')
+    if request_timeout <= 0:
+        raise SuspiciousOperation('request_timeout must be a positive number.')
+
+    request_headers_dict = parse_json_object_setting(request_headers_input_raw, 'request_headers')
+    headers: dict[str, str] = {}
+    for key, value in request_headers_dict.items():
+        header_key = str(key).strip()
+        if not header_key:
+            continue
+        _upsert_header_case_insensitive(headers, header_key, str(value))
+    if not any(k.lower() == 'content-type' for k in headers.keys()):
+        _upsert_header_case_insensitive(headers, 'Content-Type', 'application/json')
+
+    payload_template = parse_json_object_setting(request_json_input_raw, 'request_json')
+    payload_variables: dict[str, object] = {
+        'system_prompt': system_prompt,
+        'user_prompt': user_prompt,
+        'question': user_prompt,
+        'context': {},
+        'context_json': '{}',
+        'database_path': '',
+        'folder_path': '',
+    }
+    payload = _render_template_value(payload_template, payload_variables)
+    if not isinstance(payload, dict):
+        raise SuspiciousOperation('request_json must render to a JSON object.')
+
+    req = urllib.request.Request(
+        request_url,
+        data=json.dumps(payload).encode('utf-8'),
+        headers=headers,
+        method='POST',
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=request_timeout) as response:
+            response_raw_text = response.read().decode('utf-8', errors='ignore')
+            try:
+                response_payload = json.loads(response_raw_text)
+            except json.JSONDecodeError:
+                return response_raw_text.strip()
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode('utf-8', errors='ignore').strip()
+        raise SuspiciousOperation(f'LLM 요청 실패 (HTTP {error.code}): {detail}')
+    except urllib.error.URLError as error:
+        raise SuspiciousOperation(f'LLM 연결 실패: {error.reason}')
+
+    return _extract_text_from_llm_response(response_payload) or response_raw_text.strip()
+
+
+def generate_skill_doc_for_db(db_path: Path, settings_data: dict[str, str]) -> str:
+    """단일 SQLite 파일의 스키마와 샘플 데이터로 스킬 MD를 LLM으로 생성한다."""
+    tables = fetch_tables(db_path)[:SKILL_AUTOGEN_MAX_TABLES]
+
+    schema_parts: list[str] = []
+    for table in tables:
+        part = f"### {table['name']}\n\n```sql\n{table['create_sql']}\n```"
+        try:
+            rows = table_preview(db_path, table['name'], SKILL_AUTOGEN_SAMPLE_ROWS)
+            if rows:
+                part += f"\n\n샘플 ({len(rows)}행):\n```json\n{json.dumps(rows, ensure_ascii=False, indent=2)}\n```"
+        except Exception:
+            pass
+        schema_parts.append(part)
+
+    db_name = db_path.stem
+    schema_text = '\n\n'.join(schema_parts) if schema_parts else '(테이블 없음)'
+
+    system_prompt = (
+        'You are a database documentation assistant. '
+        'Given a SQLite database schema and sample rows, write a concise skill document in Korean markdown. '
+        'This document will be injected as context for an LLM assistant that answers natural language questions about this database. '
+        'Use the following structure exactly:\n'
+        '# {DB명} 스킬: {한 줄 용도 요약}\n\n'
+        '## 핵심 테이블 관계\n'
+        '(테이블 간 외래키·관계 요약)\n\n'
+        '## 질문 유형\n'
+        '(자주 나올 법한 자연어 질문 목록, 각 줄에 하나)\n\n'
+        '## SQL 힌트\n'
+        '(유용한 집계·조인·필터 패턴)\n\n'
+        '## 주의사항\n'
+        '(코드값 의미, 날짜 포맷, 금액 단위, 소프트 삭제 등)\n\n'
+        'Keep it concise (300–1500 characters). '
+        'Output the markdown document directly. No preamble, no outer code fences.'
+    )
+    user_prompt = f'Database: {db_name}\n\nSchema and sample data:\n\n{schema_text}'
+
+    return _call_llm_raw_text(settings_data, system_prompt, user_prompt)
+
+
+def generate_skills_for_folder(
+    folder_relative_path: str,
+    settings_data: dict[str, str],
+) -> list[dict[str, str]]:
+    """폴더 내 SQLite 파일마다 스킬 MD를 생성해 metadata/skills/ 에 저장한다."""
+    folder_path = resolve_repo_path(folder_relative_path)
+    if not folder_path.is_dir():
+        raise OSError(f'폴더를 찾을 수 없습니다: {folder_relative_path}')
+
+    results: list[dict[str, str]] = []
+    for child in sorted(folder_path.iterdir()):
+        if not child.is_file() or not is_sqlite_file(child):
+            continue
+
+        db_name = child.stem
+        skill_path = metadata_root() / 'skills' / f'{db_name}-skill01.md'
+        status = 'overwritten' if skill_path.exists() else 'created'
+
+        try:
+            content = generate_skill_doc_for_db(child, settings_data)
+            skill_path.parent.mkdir(parents=True, exist_ok=True)
+            skill_path.write_text(content, encoding='utf-8')
+            results.append({
+                'db': db_name,
+                'skill_path': f'metadata/skills/{db_name}-skill01.md',
+                'status': status,
+            })
+        except Exception as exc:
+            results.append({
+                'db': db_name,
+                'skill_path': f'metadata/skills/{db_name}-skill01.md',
+                'status': 'error',
+                'error': str(exc),
+            })
+
+    return results

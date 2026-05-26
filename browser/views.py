@@ -35,6 +35,7 @@ from .services import (
 	explorer_top_root,
 	ensure_sales_invoices_time_column,
 	write_md_file,
+	generate_skills_for_folder,
 )
 
 
@@ -173,6 +174,21 @@ def file_write_view(request: HttpRequest) -> JsonResponse:
 	except (ValueError, json.JSONDecodeError) as error:
 		return _json_error(f'Invalid request body: {error}')
 	except (OSError, SuspiciousOperation) as error:
+		return _json_error(str(error))
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def generate_skills_view(request: HttpRequest) -> JsonResponse:
+	try:
+		data = json.loads(request.body)
+		folder_path = str(data.get('path', '')).strip()
+		settings_data = load_settings()
+		results = generate_skills_for_folder(folder_path, settings_data)
+		return JsonResponse({'ok': True, 'results': results})
+	except (ValueError, json.JSONDecodeError) as error:
+		return _json_error(f'Invalid request: {error}')
+	except Exception as error:
 		return _json_error(str(error))
 
 

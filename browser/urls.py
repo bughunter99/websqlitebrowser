@@ -14,4 +14,5 @@ urlpatterns = [
     path('api/settings/', views.settings_view, name='settings_view'),
     path('api/settings/test/', views.settings_test_view, name='settings_test_view'),
     path('api/chat/', views.chat_view, name='chat_view'),
+    path('api/skill/generate/', views.generate_skills_view, name='generate_skills'),
 ]
