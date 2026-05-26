@@ -7,6 +7,6 @@ wireSidebarLayout();
 wireGlobalShortcuts();
 
 loadSettings();
-loadTree();
+loadTree(localStorage.getItem('websqlitebrowser.explorer.currentPath') || '');
 outputLog(`VERSION ${window.APP_VERSION || 'unknown'}`);
 outputLog('READY');

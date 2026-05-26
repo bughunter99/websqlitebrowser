@@ -71,3 +71,6 @@ npm-debug.log
 # Repository/Data
 repository/lab/
 repository/hist/
+
+# User settings (persisted locally, not tracked by git)
+.websqlitebrowser-settings.json

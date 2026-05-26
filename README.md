@@ -903,6 +903,26 @@ DIR ERROR 서버 응답 시간이 초과되었습니다.
 
 
 
+{
+  "model": "claude-haiku-4-5-20251001",
+  "max_tokens": 1024,
+  "system": "{{system_prompt}}",
+  "messages": [
+    { "role": "user", "content": "{{user_prompt}}" }
+  ]
+}
+에서 {{system_prompt}} 랑 {{user_prompt}}이 뭐야?
+
+
+
+여기 사용자가 Setting이나 마지막에 data explorer에서 선택한 폴더의 위치를 저장해두고, 나중에 다시 접속했을때, 그걸로 동작하게 할 수 있는 방법이 있을까? git pull해서 restart하니까 다 처음부터 되서 매번 같은걸 여러번 입력해야되.
+
+
+
+
+
+
+
 
 /////////
 

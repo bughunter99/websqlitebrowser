@@ -260,6 +260,7 @@ async function loadTree(path = '', offset = 0, append = false) {
         // 새로운 경로이거나 처음 로드인 경우 초기화
         if (offset === 0 || !append) {
             state.currentPath = data.current_path;
+            try { localStorage.setItem('websqlitebrowser.explorer.currentPath', data.current_path || ''); } catch (_) {}
             state.lastTreeData = { ...data };
             // 다음 청크 시작 오프셋 (서버 기준 next_offset 우선 사용)
             const nextOffset = Number(data.next_offset);
