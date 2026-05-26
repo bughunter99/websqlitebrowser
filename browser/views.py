@@ -1,5 +1,4 @@
 import json
-import os
 import sqlite3
 
 from django.conf import settings
@@ -18,6 +17,7 @@ from .services import (
 	call_llm,
 	summarize_chat_context,
 	directory_stats,
+	list_directory_entries,
 	fetch_tables,
 	format_modified,
 	format_size,
@@ -63,16 +63,11 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 		# Pagination parameters
 		limit = int(request.GET.get('limit', '500'))
 		offset = int(request.GET.get('offset', '0'))
-		limit = min(max(limit, 50), 1000)  # 50-1000 range
+		limit = min(max(limit, 50), 5000)  # 50-5000 range
 		offset = max(offset, 0)
 
-		all_entries = []
 		try:
-			# os.scandir()을 사용해 DirEntry의 캐시된 is_file() 활용 (stat 호출 최소화)
-			with os.scandir(str(current_path)) as scan:
-				raw = list(scan)
-			# 디렉토리 먼저, 같은 타입 내에서는 이름 순
-			all_entries = sorted(raw, key=lambda e: (e.is_file(), e.name.lower()))
+			all_entries = list_directory_entries(current_path)
 		except PermissionError as e:
 			has_parent = current_path != explorer_top_root()
 			# 권한 거부: 부분 결과와 에러 메시지 함께 반환
@@ -97,20 +92,20 @@ def repository_tree(request: HttpRequest) -> JsonResponse:
 		visible_entries = all_entries[offset:offset + limit]
 		next_offset = min(offset + len(visible_entries), total_count)
 
-		from pathlib import Path as _Path
 		entries = []
 		for entry in visible_entries:
 			try:
-				stat = entry.stat()
-				is_file = entry.is_file()
-				child = _Path(entry.path)
+				name, relative_entry_path, entry_type, is_sqlite = entry
+				child = current_path / name
+				is_file = entry_type == 'file'
+				stat = child.stat()
 				size_bytes = stat.st_size if is_file else 0
 				entries.append(
 					{
-						'name': entry.name,
-						'path': relative_to_root(child),
-						'type': 'file' if is_file else 'directory',
-						'is_sqlite': is_sqlite_file(child),
+						'name': name,
+						'path': relative_entry_path,
+						'type': entry_type,
+						'is_sqlite': is_sqlite,
 						'size_bytes': size_bytes,
 						'size_human': format_size(size_bytes) if is_file else '',
 						'modified_at': format_modified(stat.st_mtime),

@@ -11,6 +11,8 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+from threading import Lock
+from time import monotonic
 
 from django.conf import settings
 from django.core.exceptions import SuspiciousOperation
@@ -58,6 +60,12 @@ CLARIFICATION_SELECTED_MARKERS = (
     '기준 선택:',
     'WARN 이전/이후 기준과 계산식',
 )
+
+DIRECTORY_LIST_CACHE_TTL_SECONDS = 20.0
+DIRECTORY_STATS_CACHE_TTL_SECONDS = 5.0
+_DIRECTORY_LIST_CACHE: dict[str, dict[str, object]] = {}
+_DIRECTORY_STATS_CACHE: dict[str, dict[str, object]] = {}
+_DIRECTORY_CACHE_LOCK = Lock()
 
 
 def repository_root() -> Path:
@@ -162,6 +170,61 @@ def format_modified(value: float) -> str:
     return datetime.fromtimestamp(value).strftime('%Y%m%d %H%M%S')
 
 
+def _directory_signature(path: Path) -> tuple[int, int, int]:
+    stat = path.stat()
+    return (int(stat.st_mtime_ns), int(stat.st_ctime_ns), int(stat.st_ino))
+
+
+def list_directory_entries(current_path: Path) -> list[tuple[str, str, str, bool]]:
+    """Return cached, sorted directory entries.
+
+    Shape per item: (name, relative_path, type, is_sqlite)
+    type is "file" or "directory".
+    """
+    cache_key = str(current_path)
+    signature = _directory_signature(current_path)
+    now = monotonic()
+
+    with _DIRECTORY_CACHE_LOCK:
+        cached = _DIRECTORY_LIST_CACHE.get(cache_key)
+        if cached is not None:
+            cached_signature = cached.get('signature')
+            cached_at = float(cached.get('cached_at', 0.0))
+            if cached_signature == signature and (now - cached_at) <= DIRECTORY_LIST_CACHE_TTL_SECONDS:
+                entries = cached.get('entries', [])
+                if isinstance(entries, list):
+                    return entries
+
+    entries: list[tuple[str, str, str, bool]] = []
+    with os.scandir(str(current_path)) as scan:
+        for entry in scan:
+            try:
+                is_file = entry.is_file()
+                child = Path(entry.path)
+                entries.append(
+                    (
+                        entry.name,
+                        relative_to_root(child),
+                        'file' if is_file else 'directory',
+                        is_sqlite_file(child) if is_file else False,
+                    )
+                )
+            except (OSError, PermissionError):
+                # Skip entries that cannot be inspected.
+                continue
+
+    entries.sort(key=lambda item: (item[2] == 'file', item[0].lower()))
+
+    with _DIRECTORY_CACHE_LOCK:
+        _DIRECTORY_LIST_CACHE[cache_key] = {
+            'signature': signature,
+            'cached_at': now,
+            'entries': entries,
+        }
+
+    return entries
+
+
 def directory_stats(current_path: Path) -> dict[str, object]:
     """
     현재 디렉토리의 직접 자식 항목만 통계 계산
@@ -169,6 +232,20 @@ def directory_stats(current_path: Path) -> dict[str, object]:
     - 이전 방식의 재귀 스캔 제거 (O(n*m) 성능 문제 해결)
     - 권한 거부 시 안전하게 처리
     """
+    cache_key = str(current_path)
+    signature = _directory_signature(current_path)
+    now = monotonic()
+
+    with _DIRECTORY_CACHE_LOCK:
+        cached = _DIRECTORY_STATS_CACHE.get(cache_key)
+        if cached is not None:
+            cached_signature = cached.get('signature')
+            cached_at = float(cached.get('cached_at', 0.0))
+            if cached_signature == signature and (now - cached_at) <= DIRECTORY_STATS_CACHE_TTL_SECONDS:
+                value = cached.get('value')
+                if isinstance(value, dict):
+                    return value
+
     directories = 0
     files = 0
     total_size_bytes = 0
@@ -199,7 +276,7 @@ def directory_stats(current_path: Path) -> dict[str, object]:
     disk = shutil.disk_usage(current_path)
     used_percent = (disk.used / disk.total * 100.0) if disk.total else 0.0
 
-    return {
+    result = {
         'directories': directories,
         'files': files,
         'total_size_bytes': total_size_bytes,
@@ -214,6 +291,15 @@ def directory_stats(current_path: Path) -> dict[str, object]:
             'used_percent': round(used_percent, 1),
         },
     }
+
+    with _DIRECTORY_CACHE_LOCK:
+        _DIRECTORY_STATS_CACHE[cache_key] = {
+            'signature': signature,
+            'cached_at': now,
+            'value': result,
+        }
+
+    return result
 
 
 def settings_path() -> Path:

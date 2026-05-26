@@ -7,7 +7,7 @@
 /** 백그라운드 로딩 취소 제어용 카운터. loadTree 호출마다 증가해 이전 bg 루프를 무효화한다. */
 let _explorerBgGeneration = 0;
 const EXPLORER_INITIAL_LIMIT = 120;
-const EXPLORER_CHUNK_LIMIT = 700;
+const EXPLORER_CHUNK_LIMIT = 2000;
 
 function _countExplorerEntryTypes(entries) {
     let directories = 0;
@@ -232,7 +232,7 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation, pro
         if (_explorerBgGeneration !== generation) return;
 
         // UI 블로킹 방지를 위한 짧은 대기
-        await new Promise((r) => setTimeout(r, 60));
+        await new Promise((r) => setTimeout(r, 10));
         if (_explorerBgGeneration !== generation) return;
 
         try {
