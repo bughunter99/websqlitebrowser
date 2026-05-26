@@ -50,8 +50,10 @@
                         <h3 class="panel-title">Data Explorer</h3>
                         <div class="explorer-topline">
                             <div class="path-chip" id="workspace-root">repository</div>
-                            <input id="explorer-filter" type="text" placeholder="Filter">
                             <button class="button-secondary" id="workspace-reload">Reload</button>
+                        </div>
+                        <div class="explorer-filterline">
+                            <input id="explorer-filter" type="text" placeholder="Filter (이름 포함 검색)">
                             <button class="button-secondary" id="generate-skills" title="현재 폴더의 SQLite 파일로 스킬 MD 자동 생성 (LLM 필요)">AS</button>
                         </div>
                         <div class="explorer-list" id="explorer-list" tabindex="0" aria-label="Data Explorer list"></div>
