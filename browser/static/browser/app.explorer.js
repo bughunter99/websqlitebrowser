@@ -141,14 +141,18 @@ function _scheduleExplorerFilterSearch() {
     }
 
     const query = String(state.explorerFilter || '').trim().toLowerCase();
+    outputLog(`FILTER SCHEDULE query="${query}" len=${query.length}`);
     if (!query || query.length < 2) {
+        outputLog(`FILTER SCHEDULE skip: query too short`);
         _resetExplorerFilterSearch();
         _renderExplorerWithCurrentState();
         return;
     }
 
+    outputLog(`FILTER SCHEDULE debounce set ${EXPLORER_FILTER_SEARCH_DEBOUNCE_MS}ms`);
     _explorerFilterSearchTimer = setTimeout(() => {
         _explorerFilterSearchTimer = null;
+        outputLog(`FILTER SCHEDULE debounce fired for "${query}"`);
         _runExplorerFilterSearch(query);
     }, EXPLORER_FILTER_SEARCH_DEBOUNCE_MS);
 }
@@ -230,6 +234,7 @@ function renderExplorer(treeData, append = false, startOffset = 0) {
  */
 function setExplorerFilter(value) {
     state.explorerFilter = String(value ?? '');
+    outputLog(`FILTER SET value="${state.explorerFilter}"`);
     if (state.lastTreeData) {
         renderExplorer(state.lastTreeData);
     }
