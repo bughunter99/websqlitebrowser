@@ -83,13 +83,20 @@ function _renderExplorerWithCurrentState() {
 
 async function _runExplorerFilterSearch(filterQuery) {
     const currentQuery = String(filterQuery || '').trim().toLowerCase();
+    outputLog(`FILTER SEARCH start query="${currentQuery}" path="${state.currentPath}"`);
     if (!currentQuery || currentQuery.length < 2 || !state.lastTreeData) {
+        outputLog(`FILTER SEARCH skip: query too short or no tree data`);
         _resetExplorerFilterSearch();
         _renderExplorerWithCurrentState();
         return;
     }
 
+    const localCount = Array.isArray(state.lastTreeData?.entries)
+        ? state.lastTreeData.entries.filter((e) => String(e?.name || '').toLowerCase().includes(currentQuery)).length
+        : 0;
+    outputLog(`FILTER SEARCH local match count=${localCount}`);
     if (_hasLocalExplorerFilterMatch(currentQuery)) {
+        outputLog(`FILTER SEARCH local match found, skip API`);
         _resetExplorerFilterSearch();
         _renderExplorerWithCurrentState();
         return;
@@ -97,26 +104,30 @@ async function _runExplorerFilterSearch(filterQuery) {
 
     const requestSeq = _explorerFilterSearchSeq + 1;
     _explorerFilterSearchSeq = requestSeq;
+    const url = `/api/tree/search/?path=${encodeURIComponent(state.currentPath)}&q=${encodeURIComponent(currentQuery)}&limit=${EXPLORER_FILTER_SEARCH_LIMIT}`;
+    outputLog(`FILTER SEARCH API call: ${url}`);
     try {
-        const url = `/api/tree/search/?path=${encodeURIComponent(state.currentPath)}&q=${encodeURIComponent(currentQuery)}&limit=${EXPLORER_FILTER_SEARCH_LIMIT}`;
         const data = /** @type {any} */ (await requestJson(url));
+        outputLog(`FILTER SEARCH API response: count=${data?.count} entries=${JSON.stringify((data?.entries || []).slice(0, 3).map((e) => e?.path))}`);
         if (requestSeq !== _explorerFilterSearchSeq) {
+            outputLog(`FILTER SEARCH stale seq, discard`);
             return;
         }
         const latestFilter = String(state.explorerFilter || '').trim().toLowerCase();
         if (latestFilter !== currentQuery) {
+            outputLog(`FILTER SEARCH filter changed (now="${latestFilter}"), discard`);
             return;
         }
         _explorerFilterSearchQuery = currentQuery;
         _explorerFilterSearchEntries = Array.isArray(data.entries) ? data.entries : [];
         _renderExplorerWithCurrentState();
-        if (_explorerFilterSearchEntries.length > 0) {
-            outputLog(`DIR FILTER fallback found ${_explorerFilterSearchEntries.length} nested match(es) for "${currentQuery}"`);
-        }
+        outputLog(`FILTER SEARCH done: matched ${_explorerFilterSearchEntries.length} nested entries for "${currentQuery}"`);
     } catch (error) {
         if (requestSeq !== _explorerFilterSearchSeq) {
             return;
         }
+        // @ts-ignore
+        outputLog(`FILTER SEARCH error: ${error?.message || error}`, 'error');
         _explorerFilterSearchQuery = currentQuery;
         _explorerFilterSearchEntries = [];
         _renderExplorerWithCurrentState();
