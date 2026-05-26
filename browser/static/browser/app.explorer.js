@@ -8,6 +8,13 @@
 let _explorerBgGeneration = 0;
 const EXPLORER_INITIAL_LIMIT = 120;
 const EXPLORER_CHUNK_LIMIT = 1000;
+const EXPLORER_FILTER_SEARCH_LIMIT = 50;
+const EXPLORER_FILTER_SEARCH_DEBOUNCE_MS = 220;
+
+let _explorerFilterSearchTimer = null;
+let _explorerFilterSearchSeq = 0;
+let _explorerFilterSearchQuery = '';
+let _explorerFilterSearchEntries = [];
 
 function _setExplorerStatusbar(stats) {
     const safeStats = stats || {};
@@ -52,6 +59,89 @@ function _explorerProgressText(progress) {
     return `${entriesText} | ${foldersText} | ${filesText}`;
 }
 
+function _resetExplorerFilterSearch() {
+    _explorerFilterSearchSeq += 1;
+    _explorerFilterSearchQuery = '';
+    _explorerFilterSearchEntries = [];
+    if (_explorerFilterSearchTimer) {
+        clearTimeout(_explorerFilterSearchTimer);
+        _explorerFilterSearchTimer = null;
+    }
+}
+
+function _hasLocalExplorerFilterMatch(filterQuery) {
+    const localEntries = Array.isArray(state.lastTreeData?.entries) ? state.lastTreeData.entries : [];
+    return localEntries.some((entry) => String(entry?.name || '').toLowerCase().includes(filterQuery));
+}
+
+function _renderExplorerWithCurrentState() {
+    if (!state.lastTreeData) {
+        return;
+    }
+    renderExplorer(state.lastTreeData);
+}
+
+async function _runExplorerFilterSearch(filterQuery) {
+    const currentQuery = String(filterQuery || '').trim().toLowerCase();
+    if (!currentQuery || currentQuery.length < 2 || !state.currentPath || !state.lastTreeData) {
+        _resetExplorerFilterSearch();
+        _renderExplorerWithCurrentState();
+        return;
+    }
+
+    if (_hasLocalExplorerFilterMatch(currentQuery)) {
+        _resetExplorerFilterSearch();
+        _renderExplorerWithCurrentState();
+        return;
+    }
+
+    const requestSeq = _explorerFilterSearchSeq + 1;
+    _explorerFilterSearchSeq = requestSeq;
+    try {
+        const url = `/api/tree/search/?path=${encodeURIComponent(state.currentPath)}&q=${encodeURIComponent(currentQuery)}&limit=${EXPLORER_FILTER_SEARCH_LIMIT}`;
+        const data = /** @type {any} */ (await requestJson(url));
+        if (requestSeq !== _explorerFilterSearchSeq) {
+            return;
+        }
+        const latestFilter = String(state.explorerFilter || '').trim().toLowerCase();
+        if (latestFilter !== currentQuery) {
+            return;
+        }
+        _explorerFilterSearchQuery = currentQuery;
+        _explorerFilterSearchEntries = Array.isArray(data.entries) ? data.entries : [];
+        _renderExplorerWithCurrentState();
+        if (_explorerFilterSearchEntries.length > 0) {
+            outputLog(`DIR FILTER fallback found ${_explorerFilterSearchEntries.length} nested match(es) for "${currentQuery}"`);
+        }
+    } catch (error) {
+        if (requestSeq !== _explorerFilterSearchSeq) {
+            return;
+        }
+        _explorerFilterSearchQuery = currentQuery;
+        _explorerFilterSearchEntries = [];
+        _renderExplorerWithCurrentState();
+    }
+}
+
+function _scheduleExplorerFilterSearch() {
+    if (_explorerFilterSearchTimer) {
+        clearTimeout(_explorerFilterSearchTimer);
+        _explorerFilterSearchTimer = null;
+    }
+
+    const query = String(state.explorerFilter || '').trim().toLowerCase();
+    if (!query || query.length < 2) {
+        _resetExplorerFilterSearch();
+        _renderExplorerWithCurrentState();
+        return;
+    }
+
+    _explorerFilterSearchTimer = setTimeout(() => {
+        _explorerFilterSearchTimer = null;
+        _runExplorerFilterSearch(query);
+    }, EXPLORER_FILTER_SEARCH_DEBOUNCE_MS);
+}
+
 /**
  * 파일 탐색기 렌더링
  */
@@ -88,6 +178,15 @@ function renderExplorer(treeData, append = false, startOffset = 0) {
         : numberedEntries;
     allEntries.push(...filteredEntries);
 
+    if (!append && filterQuery && filteredEntries.length === 0 && _explorerFilterSearchQuery === filterQuery) {
+        const mappedSearchEntries = _explorerFilterSearchEntries.map((entry) => ({
+            ...entry,
+            name: `${entry.parent_dir || ''}/${entry.name || ''}`.replace(/^\//, ''),
+            _isFilterSearchResult: true,
+        }));
+        allEntries.push(...mappedSearchEntries);
+    }
+
     const rows = allEntries.map((entry) => {
         const sizeText = entry.type === 'file' ? (entry.size_human || '0 B') : '';
         const orderText = entry.type === 'parent' || !Number.isFinite(Number(entry._orderNo))
@@ -95,8 +194,9 @@ function renderExplorer(treeData, append = false, startOffset = 0) {
             : Number(entry._orderNo).toLocaleString();
         const selectedClass = String(state.selectedExplorerPath ?? '') === String(entry.path ?? '') ? ' selected' : '';
         const parentClass = entry.type === 'parent' ? ' parent-row' : '';
+        const searchClass = entry._isFilterSearchResult ? ' explorer-search-result' : '';
         return `
-            <div class="explorer-row${selectedClass}${parentClass}" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.type)}" data-is-sqlite="${entry.is_sqlite ? '1' : '0'}">
+            <div class="explorer-row${selectedClass}${parentClass}${searchClass}" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.type)}" data-is-sqlite="${entry.is_sqlite ? '1' : '0'}">
                 <div class="explorer-order">${escapeHtml(orderText)}</div>
                 <div class="explorer-name-col">
                     <span class="explorer-name" title="${escapeHtml(entry.name || '')}">${highlightExplorerName(entry.name, state.explorerFilter)}</span>
@@ -122,6 +222,7 @@ function setExplorerFilter(value) {
     if (state.lastTreeData) {
         renderExplorer(state.lastTreeData);
     }
+    _scheduleExplorerFilterSearch();
 }
 
 /**
@@ -131,6 +232,7 @@ async function loadTree(path = '', offset = 0, append = false) {
     // 새 디렉터리 탐색 시 이전 백그라운드 로딩 취소
     if (!append) {
         _explorerBgGeneration++;
+        _resetExplorerFilterSearch();
     }
 
     try {
@@ -185,6 +287,9 @@ async function loadTree(path = '', offset = 0, append = false) {
         state.explorerHasMore = data.has_more || false;
         
         renderExplorer(data, append, offset);
+        if (!append) {
+            _scheduleExplorerFilterSearch();
+        }
 
         // 첫 로드 완료 후 나머지를 백그라운드로 자동 로딩
         if (!append && data.has_more) {

@@ -28,6 +28,7 @@ from .services import (
 	resolve_repo_path,
 	run_read_only_query,
 	save_settings,
+	search_nested_entries,
 	serialize_rows,
 	connect_database,
 	explorer_top_root,
@@ -166,6 +167,30 @@ def open_database(request: HttpRequest) -> JsonResponse:
 			}
 		)
 	except (OSError, sqlite3.Error, SuspiciousOperation) as error:
+		return _json_error(str(error))
+
+
+@require_GET
+def repository_tree_search(request: HttpRequest) -> JsonResponse:
+	try:
+		relative_path = request.GET.get('path', '')
+		query = str(request.GET.get('q', '')).strip()
+		limit = min(max(int(request.GET.get('limit', '50')), 1), 200)
+
+		current_path = resolve_repo_path(relative_path)
+		if not current_path.exists() or not current_path.is_dir():
+			raise SuspiciousOperation('Directory does not exist.')
+
+		if not query:
+			return JsonResponse({'query': '', 'entries': [], 'count': 0})
+
+		entries = search_nested_entries(current_path, query, limit=limit)
+		return JsonResponse({'query': query, 'entries': entries, 'count': len(entries)})
+	except ValueError as error:
+		return _json_error(f'Invalid limit: {error}')
+	except PermissionError as error:
+		return _json_error(f'Cannot access directory: {str(error)}', 403)
+	except (OSError, SuspiciousOperation) as error:
 		return _json_error(str(error))
 
 

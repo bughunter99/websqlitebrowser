@@ -313,6 +313,91 @@ def directory_stats(current_path: Path) -> dict[str, object]:
     return result
 
 
+def search_nested_entries(current_path: Path, query: str, limit: int = 50) -> list[dict[str, object]]:
+    """
+    Search files one level below current_path.
+    Intended for folderized layouts such as ABC/ABC001.db.
+    """
+    q = str(query or '').strip().lower()
+    if not q:
+        return []
+
+    safe_limit = min(max(int(limit), 1), 200)
+    matches: list[dict[str, object]] = []
+
+    # Heuristic: query의 선행 영문 prefix가 있으면 동일 이름 폴더를 우선 조회.
+    prefix = ''
+    for ch in q:
+        if 'a' <= ch <= 'z':
+            prefix += ch
+        else:
+            break
+
+    candidate_dirs: list[Path] = []
+    seen: set[str] = set()
+
+    if prefix:
+        preferred = current_path / prefix.upper()
+        if preferred.exists() and preferred.is_dir():
+            candidate_dirs.append(preferred)
+            seen.add(str(preferred).lower())
+
+    try:
+        with os.scandir(str(current_path)) as scan:
+            for entry in scan:
+                try:
+                    if not entry.is_dir():
+                        continue
+                    child_dir = Path(entry.path)
+                    key = str(child_dir).lower()
+                    if key in seen:
+                        continue
+                    name_lower = entry.name.lower()
+                    if q.startswith(name_lower) or name_lower in q:
+                        candidate_dirs.append(child_dir)
+                        seen.add(key)
+                except (OSError, PermissionError):
+                    continue
+    except (OSError, PermissionError):
+        return []
+
+    # 방어적으로 후보 수 제한 (질의와 무관한 광범위 스캔 방지)
+    candidate_dirs = candidate_dirs[:12]
+
+    for directory in candidate_dirs:
+        try:
+            with os.scandir(str(directory)) as scan:
+                for entry in scan:
+                    try:
+                        if not entry.is_file():
+                            continue
+                        if q not in entry.name.lower():
+                            continue
+                        child = Path(entry.path)
+                        stat = entry.stat()
+                        size_bytes = int(stat.st_size)
+                        matches.append(
+                            {
+                                'name': entry.name,
+                                'path': relative_to_root(child),
+                                'type': 'file',
+                                'is_sqlite': is_sqlite_file(child),
+                                'size_bytes': size_bytes,
+                                'size_human': format_size(size_bytes),
+                                'modified_at': format_modified(stat.st_mtime),
+                                'parent_dir': directory.name,
+                            }
+                        )
+                        if len(matches) >= safe_limit:
+                            return matches
+                    except (OSError, PermissionError):
+                        continue
+        except (OSError, PermissionError):
+            continue
+
+    return matches
+
+
 def settings_path() -> Path:
     return repository_root() / SETTINGS_FILENAME
 
