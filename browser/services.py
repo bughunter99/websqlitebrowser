@@ -542,6 +542,10 @@ def _decrypt_token(encrypted: str) -> str:
         return encrypted
 
 
+def settings_path() -> Path:
+    return Path(settings.BASE_DIR) / SETTINGS_FILENAME
+
+
 def load_settings() -> dict[str, str]:
     path = settings_path()
     if not path.exists():
