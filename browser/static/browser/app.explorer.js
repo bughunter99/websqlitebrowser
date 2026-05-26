@@ -166,10 +166,10 @@ function renderExplorer(treeData, append = false, startOffset = 0) {
     const filterQuery = String(state.explorerFilter || '').trim().toLowerCase();
     const head = `
         <div class="explorer-head">
-            <div class="explorer-order-head">No.</div>
+            <div class="explorer-order-head">No.<span class="explorer-col-resizer" data-col="order"></span></div>
             <div>Name</div>
-            <div style="text-align: right;">Size</div>
-            <div style="text-align: right;">Modified</div>
+            <div style="text-align: right;">Size<span class="explorer-col-resizer" data-col="size"></span></div>
+            <div style="text-align: right;">Modified<span class="explorer-col-resizer" data-col="modified"></span></div>
         </div>
     `;
 
@@ -416,6 +416,8 @@ async function _explorerBackgroundLoad(path, startOffset, total, generation, pro
 }
 
 function wireExplorerPanel() {
+    _wireExplorerColumnResize();
+
     document.querySelectorAll('.nav-button').forEach((button) => {
         const navButton = /** @type {HTMLElement} */ (button);
         navButton.addEventListener('click', () => setPanel(navButton.dataset.target || 'explorer'));
@@ -607,4 +609,40 @@ function wireExplorerPanel() {
             loadTree(state.currentPath);
         });
     }
+}
+
+function _wireExplorerColumnResize() {
+    const list = domElements.explorerList;
+    const COL_DEFAULTS = { order: 56, size: 90, modified: 130 };
+    const COL_MIN = { order: 30, size: 50, modified: 70 };
+
+    list.addEventListener('mousedown', (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const resizer = /** @type {HTMLElement|null} */ (target ? target.closest('.explorer-col-resizer') : null);
+        if (!resizer) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        const col = resizer.dataset.col;
+        if (!col) return;
+
+        resizer.classList.add('resizing');
+        const propName = `--col-${col}-w`;
+        const currentVal = list.style.getPropertyValue(propName);
+        const startWidth = currentVal ? parseInt(currentVal, 10) : (COL_DEFAULTS[col] || 80);
+        const startX = event.clientX;
+
+        const onMove = (e) => {
+            const delta = e.clientX - startX;
+            const newWidth = Math.max(COL_MIN[col] || 40, startWidth + delta);
+            list.style.setProperty(propName, `${newWidth}px`);
+        };
+        const onUp = () => {
+            resizer.classList.remove('resizing');
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
 }

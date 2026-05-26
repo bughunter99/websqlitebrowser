@@ -592,7 +592,7 @@
 
         .explorer-head > div:nth-child(1),
         .explorer-row > .explorer-order {
-            width: 56px;
+            width: var(--col-order-w, 56px);
             flex-shrink: 0;
         }
 
@@ -604,14 +604,36 @@
 
         .explorer-head > div:nth-child(3),
         .explorer-row > .explorer-size {
-            width: 90px;
+            width: var(--col-size-w, 90px);
             flex-shrink: 0;
         }
 
         .explorer-head > div:nth-child(4),
         .explorer-row > .explorer-modified {
-            width: 130px;
+            width: var(--col-modified-w, 130px);
             flex-shrink: 0;
+        }
+
+        .explorer-head > div {
+            position: relative;
+        }
+
+        .explorer-col-resizer {
+            position: absolute;
+            right: -3px;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            cursor: col-resize;
+            z-index: 2;
+            touch-action: none;
+            user-select: none;
+        }
+
+        .explorer-col-resizer:hover,
+        .explorer-col-resizer.resizing {
+            background: rgba(80, 130, 220, 0.45);
+            border-radius: 2px;
         }
 
         .explorer-head {
@@ -620,8 +642,8 @@
             z-index: 1;
             background: linear-gradient(180deg, #f6f9fd, #e2e9f3);
             border-bottom: 1px solid var(--line);
-            color: var(--accent-ink);
-            font-weight: 400;
+            color: #1a2233;
+            font-weight: 600;
             font-size: calc(0.58rem * var(--explorer-scale));
             min-height: calc(14px * var(--explorer-scale));
             line-height: 1;
