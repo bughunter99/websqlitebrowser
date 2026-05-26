@@ -480,6 +480,11 @@
             z-index: 0;
         }
 
+        .chat-composer textarea:focus {
+            outline: 1px solid #4a80cc;
+            outline-offset: -1px;
+        }
+
         .chat-composer.is-pending .chat-input-orbit {
             opacity: 1;
         }

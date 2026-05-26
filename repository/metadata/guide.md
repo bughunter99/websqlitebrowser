@@ -9,12 +9,38 @@ Chat 응답 품질은 `metadata/` 아래 `.md` 파일을 얼마나 잘 작성했
 
 | 파일 | 경로 | 효과 |
 |------|------|------|
+| **시스템 프롬프트** | `system/prompt.md` | LLM 역할·지침 전체 교체 |
 | 테이블 설명 | `tables/{테이블명}.md` | ★★★ 가장 효과 큼 |
 | DB 전체 설명 | `databases/{DB파일명(확장자 제외)}.md` | ★★ |
 | 복잡한 쿼리·업무 규칙 | `skills/{DB명}-skill01.md` | ★★ |
 | 전역 공통 규칙 | `skills/skill01.md` | ★ |
 
 > **파일명 예시:** `sample.db` → `databases/sample.md`, `skills/sample-skill01.md`
+
+---
+
+## 시스템 프롬프트 커스터마이징
+
+`repository/system/prompt.md` 파일을 만들면 LLM에게 보내는 **역할 지침(system prompt)을 완전히 교체**할 수 있습니다.  
+파일이 없으면 내장 기본값을 사용합니다.
+
+**파일 경로:** `repository/system/prompt.md`
+
+**기본값 (참고용):**
+```
+You are a Korean assistant for SQLite database exploration.
+Answer using only the provided schema and sample rows.
+If metadata_docs are provided in context, treat them as authoritative business semantics.
+Prioritize metadata sections for field meaning, question patterns, and query strategy when they are present.
+If you are unsure, say so clearly.
+Return exactly one JSON object with keys "answer" and "sql".
+The "answer" value must be Korean plain text.
+The "sql" value must be either an empty string or a read-only SQLite SQL statement.
+When context.mode is "folder", use explicit database aliases from context.databases[].alias and table notation alias.table_name for cross-database joins.
+Do not include markdown, code fences, or additional keys.
+```
+
+> 응답 형식(`"answer"`, `"sql"` JSON 키)은 프론트엔드가 파싱하므로 반드시 유지해야 합니다.
 
 ---
 

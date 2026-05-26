@@ -1933,7 +1933,7 @@ def call_llm(
         metadata_count = len(metadata_docs) if isinstance(metadata_docs, list) else 0
         trace.append(f'build single-db context table_count={table_count} metadata_docs={metadata_count}')
 
-    system_prompt = (
+    _default_system_prompt = (
         'You are a Korean assistant for SQLite database exploration. '
         'Answer using only the provided schema and sample rows. '
         'If metadata_docs are provided in context, treat them as authoritative business semantics. '
@@ -1946,6 +1946,11 @@ def call_llm(
         'and table notation alias.table_name for cross-database joins. '
         'Do not include markdown, code fences, or additional keys.'
     )
+    _prompt_file = repository_root() / 'system' / 'prompt.md'
+    if _prompt_file.is_file():
+        system_prompt = _prompt_file.read_text(encoding='utf-8').strip() or _default_system_prompt
+    else:
+        system_prompt = _default_system_prompt
     user_prompt = json.dumps(
         {
             'question': question,
