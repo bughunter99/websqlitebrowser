@@ -98,16 +98,42 @@ function _renderMdTabBar() {
     const tabBar = _getMdTabBarEl();
     if (!tabBar) { return; }
 
-    tabBar.innerHTML = _mdTabs.map((tab) => {
+    tabBar.innerHTML = '';
+
+    _mdTabs.forEach((tab) => {
         const isActive = tab.path === _mdActiveTabPath;
         const isDirty = tab.content !== tab.originalContent;
-        return `
-            <button class="tab-button md-tab-btn${isActive ? ' active' : ''}" data-md-path="${escapeHtml(tab.path)}" title="${escapeHtml(tab.path)}">
-                <span class="md-tab-title">${escapeHtml(tab.title)}${isDirty ? '<span class="md-dirty-dot"> ●</span>' : ''}</span>
-                <span class="md-tab-close" data-md-close="${escapeHtml(tab.path)}" title="닫기" aria-label="닫기">×</span>
-            </button>
-        `;
-    }).join('');
+
+        const btn = document.createElement('button');
+        btn.className = 'tab-button md-tab-btn' + (isActive ? ' active' : '');
+        btn.title = tab.path;
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'md-tab-title';
+        titleSpan.textContent = tab.title;
+        if (isDirty) {
+            const dot = document.createElement('span');
+            dot.className = 'md-dirty-dot';
+            dot.textContent = ' ●';
+            titleSpan.appendChild(dot);
+        }
+
+        const closeSpan = document.createElement('span');
+        closeSpan.className = 'md-tab-close';
+        closeSpan.title = '닫기';
+        closeSpan.setAttribute('aria-label', '닫기');
+        closeSpan.textContent = '×';
+        closeSpan.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeMdTab(tab.path);
+        });
+
+        btn.appendChild(titleSpan);
+        btn.appendChild(closeSpan);
+        btn.addEventListener('click', () => _activateMdTab(tab.path));
+
+        tabBar.appendChild(btn);
+    });
 }
 
 /**
@@ -223,26 +249,6 @@ function closeAllMdTabs(force = false) {
  * MD 에디터 이벤트 연결 (앱 초기화 시 1회 호출)
  */
 function wireMdEditor() {
-    // 탭 바 클릭 이벤트 (이벤트 위임)
-    const tabBar = _getMdTabBarEl();
-    if (tabBar) {
-        tabBar.addEventListener('click', (event) => {
-            const target = event.target instanceof Element ? event.target : null;
-            if (!target) { return; }
-
-            const closeBtn = target.closest('[data-md-close]');
-            if (closeBtn instanceof HTMLElement && closeBtn.dataset.mdClose) {
-                closeMdTab(closeBtn.dataset.mdClose);
-                return;
-            }
-
-            const tabBtn = target.closest('.md-tab-btn');
-            if (tabBtn instanceof HTMLElement && tabBtn.dataset.mdPath) {
-                _activateMdTab(tabBtn.dataset.mdPath);
-            }
-        });
-    }
-
     // 텍스트 변경 감지
     const textarea = _getMdTextareaEl();
     if (textarea) {

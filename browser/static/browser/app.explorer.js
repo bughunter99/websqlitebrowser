@@ -655,6 +655,9 @@ function wireExplorerPanel() {
                             outputLog(`SKILL GEN ERROR db=${r.db} ${r.error}`, 'error');
                         } else {
                             outputLog(`SKILL GEN ${r.status.toUpperCase()} ${r.skill_path}`);
+                            if (typeof openMdEditor === 'function') {
+                                openMdEditor(r.skill_path);
+                            }
                         }
                     }
                 }
