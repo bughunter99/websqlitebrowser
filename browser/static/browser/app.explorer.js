@@ -166,10 +166,10 @@ function renderExplorer(treeData, append = false, startOffset = 0) {
     const filterQuery = String(state.explorerFilter || '').trim().toLowerCase();
     const head = `
         <div class="explorer-head">
-            <div class="explorer-order-head">No.<span class="explorer-col-resizer" data-col="order"></span></div>
-            <div>Name</div>
-            <div style="text-align: right;">Size<span class="explorer-col-resizer" data-col="size"></span></div>
-            <div style="text-align: right;">Modified<span class="explorer-col-resizer" data-col="modified"></span></div>
+            <div class="explorer-order-head">No.<span class="explorer-col-resizer" data-col="order" data-dir="1"></span></div>
+            <div>Name<span class="explorer-col-resizer" data-col="size" data-dir="-1"></span></div>
+            <div style="text-align: right;">Size<span class="explorer-col-resizer" data-col="size" data-dir="1"></span></div>
+            <div style="text-align: right;">Modified</div>
         </div>
     `;
 
@@ -632,9 +632,10 @@ function _wireExplorerColumnResize() {
         const startWidth = currentVal ? parseInt(currentVal, 10) : (COL_DEFAULTS[col] || 80);
         const startX = event.clientX;
 
+        const dir = parseInt(resizer.dataset.dir || '1', 10);
         const onMove = (e) => {
             const delta = e.clientX - startX;
-            const newWidth = Math.max(COL_MIN[col] || 40, startWidth + delta);
+            const newWidth = Math.max(COL_MIN[col] || 40, startWidth + dir * delta);
             list.style.setProperty(propName, `${newWidth}px`);
         };
         const onUp = () => {
